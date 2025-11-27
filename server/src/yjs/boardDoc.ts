@@ -53,17 +53,30 @@ export class BoardDoc {
         const arr = this.doc.getArray<Y.Map<unknown>>(this.arrayName);
         const maps = arr.toArray() as Y.Map<unknown>[];
 
-        const idToMap = new Map<string, Y.Map<unknown>>();
-        for (const m of maps) {
+        const idToMap = new Map<string, { map: Y.Map<unknown>; index: number }>();
+        for (const [index, m] of maps.entries()) {
             const id = String(m.get('id'));
-            idToMap.set(id, m);
+            idToMap.set(id, { map: m, index });
         }
 
         this.doc.transact(() => {
-            console.log(`[BoardDoc] Applying patch. Updates: ${patch.updates?.length ?? 0}, Creates: ${patch.creates?.length ?? 0}`);
+            console.log(`[BoardDoc] Applying patch. Updates: ${patch.updates?.length ?? 0}, Creates: ${patch.creates?.length ?? 0}, Deletes: ${patch.deletes?.length ?? 0}`);
+
+            const deleteIndices: number[] = [];
+            for (const id of patch.deletes ?? []) {
+                const entry = idToMap.get(id);
+                if (!entry) continue;
+                deleteIndices.push(entry.index);
+                idToMap.delete(id);
+            }
+
+            deleteIndices
+                .sort((a, b) => b - a)
+                .forEach((idx) => arr.delete(idx, 1));
+
             // updates
             for (const upd of patch.updates ?? []) {
-                const target = idToMap.get(upd.id);
+                const target = idToMap.get(upd.id)?.map;
                 if (!target) continue;
                 for (const [key, value] of Object.entries(upd.props)) {
                     if (value === undefined) continue;
