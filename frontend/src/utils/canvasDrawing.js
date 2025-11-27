@@ -20,6 +20,74 @@ export const throttle = (fn, delay) => {
   };
 };
 
+// Helper for "handdrawn" lines using the pen engine
+const drawHanddrawnLine = (
+  context,
+  start,
+  end,
+  color,
+  lw,
+  penStyleOptions = {},
+  seed = 1
+) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+  // Normalized normal vector
+  const nx = -dy / len;
+  const ny = dx / len;
+
+  // Curvature amplitude (max ~8 px)
+  const maxAmp = Math.min(8, len * 0.04);
+
+  const segments = 4; // Total 6 points (with ends)
+
+  const points = [];
+
+  // Pseudo-random based on seed + index
+  const rand = (i) => {
+    const x = Math.sin(seed * 9973 + i * 7919) * 10000;
+    return x - Math.floor(x); // [0,1)
+  };
+
+  for (let i = 0; i <= segments + 1; i++) {
+    const t = i / (segments + 1); // 0..1
+    const bx = start.x + dx * t;
+    const by = start.y + dy * t;
+
+    // First and last sample - no jitter, perfect ends
+    let amp = 0;
+    if (i > 0 && i < segments + 1) {
+      const r = rand(i) * 2 - 1; // [-1,1]
+      amp = r * maxAmp;
+    }
+
+    points.push({
+      x: bx + nx * amp,
+      y: by + ny * amp,
+      t: typeof performance !== 'undefined' ? performance.now() : Date.now()
+    });
+  }
+
+  const penStyle = 'technical'; // Could be parameterized if needed
+  const presetConfig =
+    (penStyleOptions.presets && penStyleOptions.presets[penStyle]) || {};
+
+  const globalSmoothing =
+    typeof penStyleOptions.smoothingFactor === 'number'
+      ? Math.min(Math.max(penStyleOptions.smoothingFactor / 100, 0), 1)
+      : 0.25;
+
+  drawStyledPen(context, points, {
+    style: penStyle,
+    color,
+    lineWidth: lw,
+    config: presetConfig,
+    globalSmoothing
+  });
+};
+
 /**
  * Draw a single element on the canvas.
  * This is the main dispatcher that renders all element types.
@@ -143,13 +211,28 @@ export const drawElement = (
     case 'line': {
       if (!element.start || !element.end) break;
 
-      if (isClean) {
-        context.beginPath();
-        context.moveTo(element.start.x, element.start.y);
-        context.lineTo(element.end.x, element.end.y);
-        context.stroke();
+      const strokeMode = element.strokeMode || 'clean';
+
+      if (strokeMode === 'handdrawn') {
+        const strokeColor = element.strokeColor || element.color || color;
+        drawHanddrawnLine(
+          context,
+          element.start,
+          element.end,
+          strokeColor,
+          lw,
+          penStyleOptions,
+          element.seed || 1
+        );
       } else {
-        rc.line(element.start.x, element.start.y, element.end.x, element.end.y, options);
+          if (isClean) {
+            context.beginPath();
+            context.moveTo(element.start.x, element.start.y);
+            context.lineTo(element.end.x, element.end.y);
+            context.stroke();
+          } else {
+            rc.line(element.start.x, element.start.y, element.end.x, element.end.y, options);
+          }
       }
 
       // Arrowheads

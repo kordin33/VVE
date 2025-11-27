@@ -7,6 +7,7 @@ export type AgentBoardObjectKind =
     | 'handwriting'
     | 'functionPlot'
     | 'image'
+    | 'arrow'
     | 'other';
 
 export interface AgentBoardObject {
@@ -69,7 +70,14 @@ export function buildAgentBoardContext(
         return !(ox2 < vx1 || ox1 > vx2 || oy2 < vy1 || oy1 > vy2);
     };
 
-    const filtered = viewport ? objects.filter(intersectsViewport) : [...objects];
+    // Filter out internal objects (e.g. selection handles)
+    const isVisibleToAgent = (obj: BoardObject): boolean => {
+        if (obj.type === 'selection' || obj.type === 'handle' || obj.type === 'cursor') return false;
+        return true;
+    };
+
+    const filtered = (viewport ? objects.filter(intersectsViewport) : [...objects])
+        .filter(isVisibleToAgent);
 
     // Sortowanie po zIndex/timestamp, żeby agent widział „górę” stosu
     filtered.sort(
@@ -101,10 +109,10 @@ export function buildAgentBoardContext(
         };
 
         if (o.text) {
-            base.text = String(o.text).slice(0, 200);
+            base.text = String(o.text).slice(0, 120); // Reduced limit
         }
         if (o.latex) {
-            base.latex = String(o.latex).slice(0, 200);
+            base.latex = String(o.latex).slice(0, 120); // Reduced limit
         }
 
         return base;
@@ -132,6 +140,10 @@ function inferKind(o: any): AgentBoardObjectKind {
             return 'functionPlot';
         case 'image':
             return 'image';
+        case 'line':
+            // If it has arrowStyle, it's likely an arrow/vector
+            if (o.arrowStyle && o.arrowStyle !== 'none') return 'arrow';
+            return 'shape';
         default:
             return 'shape';
     }

@@ -28,17 +28,129 @@ export const boardToolsSchema: ChatCompletionTool[] = [
     {
         type: 'function',
         function: {
-            name: 'generate_diagram_from_prompt',
+            name: 'connect_objects',
             description:
-                'Generate simple block diagram / flowchart for the given prompt. Returns new nodes in board format.',
+                'Draw an arrow (vector) from one existing object to another using their bounding-box centers.',
             parameters: {
                 type: 'object',
                 properties: {
-                    prompt: { type: 'string' },
-                    centerX: { type: 'number', description: 'Center X of generated diagram.' },
-                    centerY: { type: 'number', description: 'Center Y of generated diagram.' },
+                    fromId: { type: 'string', description: 'Source object id' },
+                    toId: { type: 'string', description: 'Target object id' },
+                    style: {
+                        type: 'object',
+                        description: 'Optional style overrides',
+                        properties: {
+                            lineWidth: { type: 'number', description: 'Stroke width in px (1–8)' },
+                            lineStyle: {
+                                type: 'string',
+                                enum: ['solid', 'dashed', 'dotted'],
+                            },
+                            arrowHead: {
+                                type: 'string',
+                                enum: ['end', 'both'],
+                                description: 'Arrowhead direction (default "end")',
+                            },
+                            color: {
+                                type: 'string',
+                                description: 'Stroke color hex, e.g. "#000000"',
+                            },
+                            strokeMode: {
+                                type: 'string',
+                                enum: ['clean', 'handdrawn'],
+                                description: 'Line drawing style: "clean" for diagrams, "handdrawn" for sketches.',
+                            },
+                        },
+                    },
                 },
-                required: ['prompt'],
+                required: ['fromId', 'toId'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'label_object',
+            description:
+                'Create a short label (plain text or LaTeX) attached to an existing object (top/bottom/left/right/center).',
+            parameters: {
+                type: 'object',
+                properties: {
+                    objectId: { type: 'string' },
+                    text: {
+                        type: 'string',
+                        description: 'Label content. For LaTeX do NOT add $ or \\( \\).',
+                    },
+                    mode: {
+                        type: 'string',
+                        enum: ['plain', 'latex'],
+                        description: 'Render as normal text or LaTeX block.',
+                        default: 'plain',
+                    },
+                    position: {
+                        type: 'string',
+                        enum: ['top', 'bottom', 'left', 'right', 'center'],
+                        default: 'top',
+                    },
+                },
+                required: ['objectId', 'text'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'set_style',
+            description:
+                'Update visual style of one or more objects: stroke width, dash, color, arrowStyle, strokeMode etc.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    ids: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Object ids to update.',
+                    },
+                    props: {
+                        type: 'object',
+                        description: 'Style props to apply to all given ids.',
+                        properties: {
+                            lineWidth: { type: 'number' },
+                            lineStyle: {
+                                type: 'string',
+                                enum: ['solid', 'dashed', 'dotted'],
+                            },
+                            arrowStyle: {
+                                type: 'string',
+                                enum: ['none', 'start', 'end', 'both'],
+                            },
+                            strokeColor: { type: 'string' },
+                            fillColor: { type: 'string' },
+                            strokeMode: {
+                                type: 'string',
+                                enum: ['clean', 'handdrawn'],
+                            },
+                        },
+                        additionalProperties: false,
+                    },
+                },
+                required: ['ids', 'props'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'delete_objects',
+            description: 'Delete one or more objects from the board by their ids.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    ids: {
+                        type: 'array',
+                        items: { type: 'string' },
+                    },
+                },
+                required: ['ids'],
             },
         },
     },
@@ -64,7 +176,7 @@ export const boardToolsSchema: ChatCompletionTool[] = [
         function: {
             name: 'draw_board_patch',
             description:
-                'Create, update or delete board objects directly. Use this as the main way to draw/edit on the board.',
+                'Create, update or delete board objects directly. Use for low-level drawing when higher-level tools like connect_objects or label_object are not sufficient.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -107,8 +219,8 @@ export const boardToolsSchema: ChatCompletionTool[] = [
                                 },
                                 x: { type: 'number' },
                                 y: { type: 'number' },
-                                width: { type: 'number' },
-                                height: { type: 'number' },
+                                width: { type: 'number', description: 'Required for shapes. Optional for path.' },
+                                height: { type: 'number', description: 'Required for shapes. Optional for path.' },
                                 text: { type: 'string' },
                                 latex: { type: 'string' },
                                 color: {
@@ -119,6 +231,21 @@ export const boardToolsSchema: ChatCompletionTool[] = [
                                     type: 'number',
                                     description: 'Rotation in degrees.',
                                 },
+                                lineWidth: { type: 'number', description: 'Stroke width in px' },
+                                lineStyle: {
+                                    type: 'string',
+                                    enum: ['solid', 'dashed', 'dotted'],
+                                },
+                                arrowStyle: {
+                                    type: 'string',
+                                    enum: ['none', 'start', 'end', 'both'],
+                                },
+                                strokeMode: {
+                                    type: 'string',
+                                    enum: ['clean', 'handdrawn'],
+                                },
+                                fillColor: { type: 'string' },
+                                strokeColor: { type: 'string' },
                                 points: {
                                     type: 'array',
                                     items: {
@@ -128,12 +255,6 @@ export const boardToolsSchema: ChatCompletionTool[] = [
                                             y: { type: 'number' },
                                         },
                                     },
-                                },
-                                // dodatkowe pole na „rodzaj” obiektu jeżeli chcesz
-                                kind: {
-                                    type: 'string',
-                                    description:
-                                        'Optional semantic kind: "note", "heading", "example", etc.',
                                 },
                             },
                             required: ['id', 'type', 'x', 'y'],
@@ -148,7 +269,7 @@ export const boardToolsSchema: ChatCompletionTool[] = [
                                 props: {
                                     type: 'object',
                                     description:
-                                        'Properties to update (x, y, width, height, text, latex, color, etc.)',
+                                        'Properties to update (x, y, width, height, text, latex, color, style etc.)',
                                 },
                             },
                             required: ['id', 'props'],

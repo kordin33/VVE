@@ -1,5 +1,6 @@
 import { BoardDoc } from '../../yjs/boardDoc';
-import { BoardPatch, BoardSnapshot, BoardObject } from '../../models/boardSnapshot';
+import { BoardPatch, BoardSnapshot, BoardObject, BoardArrowStyle } from '../../models/boardSnapshot';
+import { nanoid, snapToGrid, getCenter, getBBox, clamp } from './boardUtils';
 
 type AlignSelectionArgs = {
     gridSize: number;
@@ -17,8 +18,45 @@ type SimplifyEquationArgs = {
     objectId: string;
 };
 
-const snap = (v: number, grid: number) =>
-    Math.round(v / grid) * grid;
+type DrawBoardPatchArgs = { patch: BoardPatch };
+type InsertLatexArgs = { latex: string; x?: number; y?: number; width?: number; height?: number };
+type TextToLatexArgs = { objectId: string };
+type PlotFunctionArgs = { expression: string; xMin?: number; xMax?: number; x?: number; y?: number };
+
+type ConnectObjectsArgs = {
+    fromId: string;
+    toId: string;
+    style?: {
+        lineWidth?: number;
+        lineStyle?: 'solid' | 'dashed' | 'dotted';
+        arrowHead?: 'end' | 'both';
+        color?: string;
+        strokeMode?: 'clean' | 'handdrawn';
+    };
+};
+
+type LabelObjectArgs = {
+    objectId: string;
+    text: string;
+    mode?: 'plain' | 'latex';
+    position?: 'top' | 'bottom' | 'left' | 'right' | 'center';
+};
+
+type SetStyleArgs = {
+    ids: string[];
+    props: {
+        lineWidth?: number;
+        lineStyle?: 'solid' | 'dashed' | 'dotted';
+        arrowStyle?: 'none' | 'start' | 'end' | 'both';
+        strokeColor?: string;
+        fillColor?: string;
+        strokeMode?: 'clean' | 'handdrawn';
+    };
+};
+
+type DeleteObjectsArgs = {
+    ids: string[];
+};
 
 function getSelection(snapshot: BoardSnapshot, selectionIds?: string[]): BoardObject[] {
     if (selectionIds?.length) {
@@ -40,14 +78,14 @@ export function toolAlignSelectionToGrid(
 
     for (const o of sel) {
         const props: Partial<BoardObject> = {
-            x: snap(o.x, gridSize),
-            y: snap(o.y, gridSize),
+            x: snapToGrid(o.x, gridSize),
+            y: snapToGrid(o.y, gridSize),
         };
 
         if (o.points && o.points.length) {
             props.points = o.points.map(p => ({
-                x: snap(p.x, gridSize),
-                y: snap(p.y, gridSize),
+                x: snapToGrid(p.x, gridSize),
+                y: snapToGrid(p.y, gridSize),
             }));
         }
 
@@ -92,14 +130,6 @@ export function toolSimplifyEquationBlock(
     return patch;
 }
 
-// --- New Tools ---
-
-type DrawBoardPatchArgs = { patch: BoardPatch };
-type InsertLatexArgs = { latex: string; x?: number; y?: number; width?: number; height?: number };
-type TextToLatexArgs = { objectId: string };
-type PlotFunctionArgs = { expression: string; xMin?: number; xMax?: number; x?: number; y?: number };
-
-// 4) Draw Board Patch (Low-level)
 // 4) Draw Board Patch (Low-level)
 export function toolDrawBoardPatch(
     doc: BoardDoc,
@@ -118,7 +148,6 @@ export function toolDrawBoardPatch(
     if (Array.isArray(source.creates)) {
         patch.creates = source.creates.map((raw: any) => ({
             ...raw,
-            // Ensure type is preserved or mapped if necessary
         }));
     }
 
@@ -160,7 +189,7 @@ export function toolInsertLatexBox(
     const baseY = args.y ?? snapshot.objects[0]?.y ?? 100;
 
     const latexObj: BoardObject = {
-        id: `ai-latex-${Date.now()}`,
+        id: `ai-latex-${nanoid()}`,
         type: 'latex',
         x: baseX,
         y: baseY,
@@ -211,7 +240,7 @@ export function toolPlotFunction(
     const baseY = args.y ?? snapshot.objects[0]?.y ?? 100;
 
     const plot: BoardObject = {
-        id: `ai-fplot-${Date.now()}`,
+        id: `ai-fplot-${nanoid()}`,
         type: 'mathFunctionPlot',
         x: baseX,
         y: baseY,
@@ -222,6 +251,164 @@ export function toolPlotFunction(
     };
 
     const patch: BoardPatch = { creates: [plot] };
+    doc.applyPatch(patch);
+    return patch;
+}
+
+// 8) Connect Objects
+export function toolConnectObjects(
+    doc: BoardDoc,
+    snapshot: BoardSnapshot,
+    args: ConnectObjectsArgs,
+): BoardPatch {
+    const from = snapshot.objects.find(o => o.id === args.fromId);
+    const to = snapshot.objects.find(o => o.id === args.toId);
+
+    if (!from || !to) {
+        return { creates: [], updates: [] };
+    }
+
+    const a = getCenter(from);
+    const b = getCenter(to);
+
+    // Limit object creation if this tool were batch-called (here it's single, but just in case)
+
+    // We can also try to clip to bounding box edge instead of center, but center is safer and simpler for now.
+    // Ideally we would intersect line(a,b) with bbox(from) and bbox(to).
+    // For now, center is fine as lines usually have lower z-index or are handled by renderer.
+
+    const arrow: BoardObject = {
+        id: `ai-arrow-${nanoid()}`,
+        type: 'line',
+        // In this model, line objects might use start/end points or just x/y + points
+        // Assuming current renderer supports start/end for lines
+        start: a,
+        end: b,
+        x: Math.min(a.x, b.x),
+        y: Math.min(a.y, b.y),
+        width: Math.abs(b.x - a.x),
+        height: Math.abs(b.y - a.y),
+
+        strokeColor: args.style?.color ?? '#000000',
+        lineWidth: args.style?.lineWidth ?? 2,
+        lineStyle: args.style?.lineStyle ?? 'solid',
+        arrowStyle: (args.style?.arrowHead ?? 'end') as BoardArrowStyle,
+        strokeMode: args.style?.strokeMode ?? 'clean',
+    };
+
+    // Snap to grid for cleaner layout? Maybe not for connections, they should follow objects.
+    // However, the function `snapObjectToGrid` from user prompt suggests snapping everything.
+    // Let's NOT snap connection lines rigidly as they must touch the objects, which might not be on grid.
+
+    const patch: BoardPatch = { creates: [arrow] };
+    doc.applyPatch(patch);
+    return patch;
+}
+
+// 9) Label Object
+export function toolLabelObject(
+    doc: BoardDoc,
+    snapshot: BoardSnapshot,
+    args: LabelObjectArgs,
+): BoardPatch {
+    const target = snapshot.objects.find(o => o.id === args.objectId);
+    if (!target) return { creates: [], updates: [] };
+
+    const mode = args.mode ?? 'plain';
+    const pos = args.position ?? 'top';
+
+    const box = getBBox(target);
+    const padding = 12;
+
+    let x = box.x;
+    let y = box.y;
+
+    // Calculate position relative to bbox
+    switch (pos) {
+        case 'top':
+            x = box.x + box.width / 2;
+            y = box.y - padding;
+            break;
+        case 'bottom':
+            x = box.x + box.width / 2;
+            y = box.y + box.height + padding;
+            break;
+        case 'left':
+            x = box.x - padding;
+            y = box.y + box.height / 2;
+            break;
+        case 'right':
+            x = box.x + box.width + padding;
+            y = box.y + box.height / 2;
+            break;
+        case 'center':
+            x = box.x + box.width / 2;
+            y = box.y + box.height / 2;
+            break;
+    }
+
+    // Adjust x/y because text usually anchors top-left or needs measuring.
+    // Since we don't know text width here, we might rely on the frontend to center it
+    // or we set textAlign: 'center' if supported.
+    // Assuming simple placement for now.
+
+    const label: BoardObject = {
+        id: `ai-label-${nanoid()}`,
+        type: mode === 'latex' ? 'latex' : 'text',
+        x: snapToGrid(x),
+        y: snapToGrid(y),
+        width: 0, // Text auto-sizes usually
+        height: 0,
+        text: mode === 'plain' ? args.text : undefined,
+        latex: mode === 'latex' ? args.text : undefined,
+        color: '#000000',
+        labelFor: target.id,
+        // Optional: add alignment props if supported by renderer
+        align: 'center',
+        baseline: 'middle',
+    };
+
+    const patch: BoardPatch = { creates: [label] };
+    doc.applyPatch(patch);
+    return patch;
+}
+
+// 10) Set Style
+export function toolSetStyle(
+    doc: BoardDoc,
+    snapshot: BoardSnapshot,
+    args: SetStyleArgs,
+): BoardPatch {
+    const allowedProps = ['lineWidth', 'lineStyle', 'arrowStyle', 'strokeColor', 'fillColor', 'strokeMode'];
+    const safeProps: Partial<BoardObject> = {};
+
+    for (const key of allowedProps) {
+        if (key in args.props) {
+            safeProps[key] = (args.props as any)[key];
+        }
+    }
+
+    if (Object.keys(safeProps).length === 0) return { updates: [] };
+
+    const updates = args.ids.map(id => ({
+        id,
+        props: safeProps,
+    }));
+
+    const patch: BoardPatch = { updates };
+    doc.applyPatch(patch);
+    return patch;
+}
+
+// 11) Delete Objects
+export function toolDeleteObjects(
+    doc: BoardDoc,
+    snapshot: BoardSnapshot,
+    args: DeleteObjectsArgs,
+): BoardPatch {
+    const patch: BoardPatch = {
+        deletes: args.ids,
+    };
     doc.applyPatch(patch);
     return patch;
 }

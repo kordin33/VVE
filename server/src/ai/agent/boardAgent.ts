@@ -14,6 +14,10 @@ import {
     toolInsertLatexBox,
     toolTextBlockToLatexUpdate,
     toolPlotFunction,
+    toolConnectObjects,
+    toolLabelObject,
+    toolSetStyle,
+    toolDeleteObjects,
 } from '../tools/boardTools';
 import { retrieveBoardDocs } from '../docs/boardCapabilities';
 import { buildAgentBoardContext } from './boardAgentContext';
@@ -31,55 +35,36 @@ const SYSTEM_PROMPT = `
 You are an "AI Board Assistant" for a collaborative math & diagram whiteboard.
 
 You receive:
-- a LIGHTWEIGHT JSON boardContext:
-  {
-    "objects": [
-      {
-        "id": string,
-        "type": string,
-        "x": number,
-        "y": number,
-        "width": number,
-        "height": number,
-        "text"?: string,
-        "latex"?: string,
-        "kind": "shape" | "note" | "latex" | "handwriting" | "functionPlot" | "image" | "other"
-      }
-    ],
-    "viewport"?: { "x": number, "y": number, "width": number, "height": number },
-    "totalObjectCount": number
-  }
-- the user's natural language request.
+- a LIGHTWEIGHT JSON boardContext (objects with id, type, x, y, width, height, text/latex),
+- optional viewport info,
+- a user request.
 
-IMPORTANT BEHAVIOUR:
+GENERAL RULES:
+1. IDs and Coordinates
+   - Treat "id" as STABLE identifiers. Reuse them when updating or deleting objects.
+   - Use (x, y, width, height) for precise placement.
+   - Prefer relative and structured layouts (aligned, neat).
+   - Trust the provided JSON snapshot. If an ID is not in the snapshot, it does not exist.
 
-1. IDs and coordinates
-- Treat "id" as STABLE identifiers. Reuse them when updating or deleting objects.
-- Use (x, y, width, height) to place new objects precisely on the board.
-- Prefer relative and structured layouts (aligned, neat, usable for students).
+2. Tool Usage
+   - Prefer HIGH-LEVEL tools over "draw_board_patch" when possible:
+     * "connect_objects" -> for arrows/vectors between shapes.
+     * "label_object" -> to attach text/LaTeX to shapes.
+     * "set_style" -> to change visual properties (color, stroke, line style).
+     * "delete_objects" -> to remove items.
+   - Use "draw_board_patch" for creating main shapes (rectangles, circles, lines) or complex batch edits.
+   - Use "strokeMode": "handdrawn" for sketches/informal drawings, and "clean" for formal diagrams/graphs.
+   - Limit creation to max ~40 objects per turn to avoid performance issues.
+   - Do NOT use "generate_diagram_from_prompt". Use primitive tools to build diagrams.
 
-2. Tools
-- Prefer using tools instead of only replying with text.
-- Main tool for drawing/editing is "draw_board_patch":
-  - create new objects through "creates";
-  - update existing objects through "updates";
-  - delete objects through "deletes".
-- Use "insert_latex_box" for standalone math formulas if it is simpler than a manual patch.
-- Use "plot_function" for graphs of functions.
-- Use "align_selection_to_grid" ONLY when user asks to tidy/align elements.
-- Use "simplify_equation_block" and "text_block_to_latex" ONLY when the user asks to simplify or convert to LaTeX. Do NOT run them on everything automatically.
-
-3. Performance & tool usage
-- Group ALL drawing/editing operations into a SINGLE "draw_board_patch" call per response.
-- Avoid long chains of tool calls. Usually you should:
-  - reason about the change,
-  - call "draw_board_patch" once,
-  - then answer with a short explanation for the user.
-- Do not request or expect the full raw board JSON; the provided boardContext is all you need.
+3. Math & LaTeX
+   - Use "label_object" with mode="latex" for labels attached to objects.
+   - Use "insert_latex_box" for standalone equations.
+   - Keep LaTeX readable and standard.
 
 4. Style of responses
-- Always produce a short, clear explanation for the user (1–3 sentences).
-- When introducing math, keep LaTeX readable and standard.
+   - Perform the action using tools, then reply with a short (1-3 sentences) explanation.
+   - Do not describe every single coordinate you changed.
 `;
 
 export async function runBoardAgent(params: {
@@ -169,21 +154,8 @@ export async function runBoardAgent(params: {
         return { reply: 'AI model returned an invalid response. Please try again.' };
     }
 
-    // Validate that the message has either content or tool_calls
-    const hasContent = firstMsg.content && firstMsg.content.trim().length > 0;
-    const hasToolCalls = firstMsg.tool_calls && firstMsg.tool_calls.length > 0;
-
-    if (!hasContent && !hasToolCalls) {
-        console.error('[AI] Empty response from model:', {
-            model: BOARD_AI_MODEL,
-            message: firstMsg,
-            finish_reason: first.choices[0]?.finish_reason,
-        });
-        return { reply: 'AI model returned an empty response. This may be a temporary issue with the AI service. Please try again.' };
-    }
-
     // If no tool_calls - just return text
-    if (!hasToolCalls) {
+    if (!firstMsg.tool_calls || firstMsg.tool_calls.length === 0) {
         return { reply: firstMsg.content ?? '' };
     }
 
@@ -191,9 +163,7 @@ export async function runBoardAgent(params: {
     let lastPatch: BoardPatch | undefined;
 
     // 2) Execute tools on server side
-    // At this point, we know hasToolCalls is true, so tool_calls is defined
     for (const toolCall of firstMsg.tool_calls!) {
-        // Type guard: ensure toolCall has a 'function' property
         if (!('function' in toolCall) || !toolCall.function) {
             console.warn('[AI] Skipping tool call without function property:', toolCall);
             continue;
@@ -225,47 +195,42 @@ export async function runBoardAgent(params: {
                 break;
             }
 
-            case 'generate_diagram_from_prompt': {
-                let nodes: BoardObject[] = [];
-                try {
-                    // Second "mini" call just to turn prompt into BoardObject[]
-                    const gen = await llmClient.chat.completions.create({
-                        model: BOARD_AI_MODEL,
-                        temperature: 0.3,
-                        messages: [
-                            {
-                                role: 'system',
-                                content:
-                                    'You generate JSON arrays of BoardObject for a whiteboard. Respond with pure JSON.',
-                            },
-                            {
-                                role: 'user',
-                                content: JSON.stringify({
-                                    prompt: args.prompt,
-                                    centerX: args.centerX,
-                                    centerY: args.centerY,
-                                }),
-                            },
-                        ],
-                    });
-
-                    const raw = gen.choices[0]?.message.content ?? '[]';
-                    // Attempt to parse JSON, handling potential markdown code blocks
-                    const jsonText = raw.replace(/```json\n?|\n?```/g, '').trim();
-                    nodes = JSON.parse(jsonText);
-                } catch (e) {
-                    console.error('[AI] Failed to generate/parse diagram nodes', e);
-                    toolMessages.push({
-                        role: 'tool',
-                        tool_call_id: toolCall.id,
-                        content: JSON.stringify({ status: 'error', message: 'Failed to generate diagram' }),
-                    });
-                    break;
-                }
-
-                const patch = toolGenerateDiagramFromPrompt(doc, snapshot, args, nodes);
+            case 'connect_objects': {
+                const patch = toolConnectObjects(doc, snapshot, args);
                 lastPatch = patch;
+                toolMessages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({ status: 'ok', patch }),
+                });
+                break;
+            }
 
+            case 'label_object': {
+                const patch = toolLabelObject(doc, snapshot, args);
+                lastPatch = patch;
+                toolMessages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({ status: 'ok', patch }),
+                });
+                break;
+            }
+
+            case 'set_style': {
+                const patch = toolSetStyle(doc, snapshot, args);
+                lastPatch = patch;
+                toolMessages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({ status: 'ok', patch }),
+                });
+                break;
+            }
+
+            case 'delete_objects': {
+                const patch = toolDeleteObjects(doc, snapshot, args);
+                lastPatch = patch;
                 toolMessages.push({
                     role: 'tool',
                     tool_call_id: toolCall.id,
@@ -275,7 +240,6 @@ export async function runBoardAgent(params: {
             }
 
             case 'simplify_equation_block': {
-                // Small call to simplify LaTeX
                 const equation = snapshot.objects.find(o => o.id === args.objectId);
                 const original = equation?.text ?? '';
                 let latex = original;
@@ -389,6 +353,15 @@ export async function runBoardAgent(params: {
                 });
                 break;
             }
+
+            // Legacy support or deprecated
+            case 'generate_diagram_from_prompt':
+                toolMessages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify({ status: 'error', message: 'Tool deprecated. Use draw_board_patch or connect_objects instead.' }),
+                });
+                break;
 
             default:
                 toolMessages.push({
