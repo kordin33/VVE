@@ -83,9 +83,9 @@
                userSelect: 'none',
                color: objectData.color || '#1e293b',
                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-               borderRadius: `${12 * props.zoomLevel}px`,
-               boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-               border: '1px solid rgba(0,0,0,0.05)',
+               borderRadius: `${8 * props.zoomLevel}px`,
+               boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
+               border: '1px solid rgba(0,0,0,0.02)',
                fontSize: `${(objectData.fontSize || 24) * props.zoomLevel}px`
              }"
         ></div>
@@ -1031,7 +1031,14 @@ onUnmounted(() => {
 .movable-object {
   position: absolute;
   box-sizing: border-box;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+/* Hover effect for responsiveness */
+.movable-object:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05);
 }
 
 /* Subtle Glass Selection */
@@ -1040,6 +1047,11 @@ onUnmounted(() => {
   background-color: rgba(148, 163, 184, 0.06);
   box-shadow: 0 0 0 6px rgba(148, 163, 184, 0.22);
   border-radius: 12px;
+}
+
+.movable-object.is-selected:hover {
+  background-color: rgba(148, 163, 184, 0.08); /* Slightly darker on hover when selected */
+  box-shadow: 0 0 0 6px rgba(148, 163, 184, 0.22); /* Keep selection shadow */
 }
 
 .object-content {

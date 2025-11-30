@@ -71,11 +71,19 @@ export const drawGrid = (ctx, zoomLevel, panOffset, canvasWidth, canvasHeight, d
   const startMajorWorldY = Math.floor(worldYMin / majorWorldGridSize) * majorWorldGridSize;
 
   // --- Set line styles ---
-  const minorColor = darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
-  const majorColor = darkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
+  // Adjust opacity based on zoom level to prevent grid from "biting" handwriting at high zoom
+  const zoomFactor = Math.max(0.2, Math.min(1, 1.2 / zoomLevel)); // Reduces opacity as zoom increases > 1.2
+  const minorOpacity = (darkMode ? 0.08 : 0.08) * zoomFactor;
+  const majorOpacity = (darkMode ? 0.15 : 0.15) * zoomFactor;
+
+  const minorColor = darkMode ? `rgba(255, 255, 255, ${minorOpacity})` : `rgba(0, 0, 0, ${minorOpacity})`;
+  const majorColor = darkMode ? `rgba(255, 255, 255, ${majorOpacity})` : `rgba(0, 0, 0, ${majorOpacity})`;
+
   const pixelRatio = window.devicePixelRatio || 1;
-  const minorLineWidth = 1 / pixelRatio; // Aim for 1 physical pixel
-  const majorLineWidth = 1.5 / pixelRatio; // Slightly thicker major lines
+  // Also thin the lines slightly at high zoom if they feel too thick, but 1 physical pixel is usually fine.
+  // We'll keep 1 physical pixel minimum.
+  const minorLineWidth = 1 / pixelRatio;
+  const majorLineWidth = 1.5 / pixelRatio;
 
   // Helper function to convert world coord to screen coord
   const worldToScreenX = (worldX) => worldX * zoomLevel + panOffset.x;
