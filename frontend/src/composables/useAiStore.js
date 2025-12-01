@@ -5,7 +5,8 @@ import { resolveBackendBaseUrl } from '../services/backendUrl';
 const state = reactive({
     isRunning: false,
     lastReply: null,
-    error: null
+    error: null,
+    pulsingObjects: new Set()
 });
 
 export function useAiStore() {
@@ -28,7 +29,27 @@ export function useAiStore() {
 
             const data = await res.json();
             state.lastReply = data.reply;
+
             // Patch is applied by server via Yjs, so we don't need to apply it manually here.
+            // However, we can use the patch info to trigger visual effects.
+            if (data.patch && (data.patch.creates || data.patch.updates)) {
+                const ids = [];
+                if (data.patch.creates) {
+                    data.patch.creates.forEach(obj => ids.push(obj.id));
+                }
+                if (data.patch.updates) {
+                    data.patch.updates.forEach(obj => ids.push(obj.id));
+                }
+
+                // Add to pulsing set
+                ids.forEach(id => state.pulsingObjects.add(id));
+
+                // Remove after 2 seconds
+                setTimeout(() => {
+                    ids.forEach(id => state.pulsingObjects.delete(id));
+                }, 2000);
+            }
+
         } catch (err) {
             console.error('Board Assistant Error:', err);
             state.error = err.message;
