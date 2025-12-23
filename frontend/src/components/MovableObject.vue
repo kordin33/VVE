@@ -123,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, reactive, watch, onBeforeUnmount } from 'vue';
 import * as Y from 'yjs'; 
 import PlotRenderer from './PlotRenderer.vue';
 import rough from 'roughjs';
@@ -297,6 +297,15 @@ const getLinePointsForRender = (data: MovableObjectData): { x: number, y: number
     x: p.x - minX,
     y: p.y - minY
   }));
+
+};
+
+const getPenPointsForRender = (data: MovableObjectData): { x: number, y: number }[] | null => {
+  // Pen points are straightforward, they are just the 'points' array
+  if (Array.isArray(data.points) && data.points.length > 0) {
+      return data.points.map(p => ({ x: ensureNumber(p.x, 0), y: ensureNumber(p.y, 0) }));
+  }
+  return null;
 };
 
 // Helper: Calculate bounding box from line points (relative to element x,y)
@@ -417,6 +426,7 @@ const bootstrapObjectData = () => {
 
 const objectData = reactive<MovableObjectData>(bootstrapObjectData());
 const isLineType = computed(() => objectData.type === 'line');
+const isPenType = computed(() => objectData.type === 'pen');
 
 const syncDataFromYMap = () => {
     const startPoint = extractPoint(props.object.get('start'));
@@ -1060,6 +1070,36 @@ const renderLocalCanvas = () => {
         // Pass points for new format drawing
         points: linePoints,
         // Clear old format to avoid confusion
+        start: undefined,
+        end: undefined
+      };
+    } else {
+      // Fallback to old format
+      localElement = {
+        ...objectData,
+        x: 0,
+        y: 0,
+        start: { x: (objectData.startX || 0) - objectData.x, y: (objectData.startY || 0) - objectData.y },
+        end: { x: (objectData.endX || 0) - objectData.x, y: (objectData.endY || 0) - objectData.y }
+      };
+    }
+  } else if (isPenType.value) {
+    const linePoints = getPenPointsForRender(objectData);
+    
+    if (linePoints && linePoints.length >= 2) {
+      // Calculate bounding box of points for normalization
+      const xs = linePoints.map(p => p.x);
+      const ys = linePoints.map(p => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+
+      // Normalize points relative to their own bounding box
+      const normalizedPenPoints = linePoints.map(p => ({ x: p.x - minX, y: p.y - minY }));
+      localElement = {
+        ...objectData,
+        x: 0,
+        y: 0,
+        points: normalizedPenPoints,
         start: undefined,
         end: undefined
       };
