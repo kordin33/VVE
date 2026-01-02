@@ -301,7 +301,6 @@ const getLinePointsForRender = (data: MovableObjectData): { x: number, y: number
 };
 
 const getPenPointsForRender = (data: MovableObjectData): { x: number, y: number }[] | null => {
-  // Pen points are straightforward, they are just the 'points' array
   if (Array.isArray(data.points) && data.points.length > 0) {
       return data.points.map(p => ({ x: ensureNumber(p.x, 0), y: ensureNumber(p.y, 0) }));
   }
