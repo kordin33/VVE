@@ -62,7 +62,7 @@
       <line v-for="(guide, i) in snapGuides" :key="i"
         :x1="transformX(guide.x1)" :y1="transformY(guide.y1)"
         :x2="transformX(guide.x2)" :y2="transformY(guide.y2)"
-        stroke="#ff0000" stroke-width="1" stroke-dasharray="4"
+        stroke="#9333ea" stroke-width="1" stroke-dasharray="4"
       />
     </svg>
 
@@ -2922,7 +2922,7 @@ export default {
       return value;
     };
 
-    const handleCloneObject = (objectData) => {
+    const handleCloneObject = (objectData, options = {}) => {
       if (!ydoc.value || !yDrawings.value) return;
       const sourceId = objectData?.id;
       const sourceMap = yDrawings.value.toArray().find(map => map.get('id') === sourceId);
@@ -2931,7 +2931,9 @@ export default {
         return;
       }
 
-      const offset = 20;
+      const useOffset = options?.useOffset !== false;
+      const offset = useOffset ? 20 : 0;
+
       const addOffset = (val) => (typeof val === 'number' && !Number.isNaN(val) ? val + offset : offset);
       const cloneMap = new Y.Map();
       sourceMap.forEach((value, key) => {
@@ -3106,6 +3108,54 @@ export default {
           updateCursor();
           return;
         }
+      }
+
+      // Arrow key nudge
+      if (selectedObjectId.value && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        const dx = (event.key === 'ArrowLeft' ? -step : (event.key === 'ArrowRight' ? step : 0));
+        const dy = (event.key === 'ArrowUp' ? -step : (event.key === 'ArrowDown' ? step : 0));
+
+        // Use findElementMapById or fallback to direct search if it was local to setup
+        const map = yDrawings.value.toArray().find((el) => el.get('id') === selectedObjectId.value);
+
+        if (map && ydoc.value) {
+            ydoc.value.transact(() => {
+                const move = (key, delta) => {
+                   const val = map.get(key);
+                   if (typeof val === 'number') map.set(key, val + delta);
+                };
+
+                if (dx !== 0) move('x', dx);
+                if (dy !== 0) move('y', dy);
+
+                // Shift nested structures
+                const shiftNested = (key) => {
+                   const nested = map.get(key);
+                   if (nested instanceof Y.Map) {
+                       if (nested.has('x')) nested.set('x', nested.get('x') + dx);
+                       if (nested.has('y')) nested.set('y', nested.get('y') + dy);
+                   }
+                };
+                shiftNested('start');
+                shiftNested('end');
+                shiftNested('position');
+
+                // Shift points
+                const points = map.get('points');
+                if (Array.isArray(points)) {
+                     map.set('points', points.map(p => ({
+                         ...p,
+                         x: (p.x || 0) + dx,
+                         y: (p.y || 0) + dy
+                     })));
+                }
+            }, 'local-nudge');
+            refreshMovableElements();
+            redrawCanvas();
+        }
+        return;
       }
 
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {

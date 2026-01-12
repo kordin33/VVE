@@ -710,7 +710,7 @@ const startDrag = (event: MouseEvent) => {
   
   // Check for Alt key for duplication
   if (event.altKey) {
-      emit('clone-object', objectData);
+      emit('clone-object', objectData, { useOffset: false });
   }
 
   isDragging.value = true;
@@ -725,13 +725,23 @@ const startDrag = (event: MouseEvent) => {
 
 const handleDrag = (event: MouseEvent) => {
   if (!isDragging.value) return;
-  const dx = (event.clientX - initialMousePos.x) / props.zoomLevel; 
-  const dy = (event.clientY - initialMousePos.y) / props.zoomLevel; 
+  let dx = (event.clientX - initialMousePos.x) / props.zoomLevel;
+  let dy = (event.clientY - initialMousePos.y) / props.zoomLevel;
+
+  // Shift key axis locking
+  if (event.shiftKey) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+          dy = 0;
+      } else {
+          dx = 0;
+      }
+  }
+
   let newX = initialObjectState.x + dx;
   let newY = initialObjectState.y + dy;
   
   // Snapping Logic
-  const SNAP_THRESHOLD = 10 / props.zoomLevel;
+  const SNAP_THRESHOLD = 5 / props.zoomLevel;
   const guides = [];
   
   if (props.snapTargets) {
