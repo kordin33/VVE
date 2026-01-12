@@ -41,7 +41,7 @@
     </div>
 
     <!-- Object Content -->
-    <div class="object-content" @mousedown.prevent.stop="startDragIfSelectedOrRequestSelect">
+    <div class="object-content animate-entry" @mousedown.prevent.stop="startDragIfSelectedOrRequestSelect">
       <template v-if="shouldRenderContent">
         <img
           v-if="objectData.type === 'image'"
@@ -1275,6 +1275,16 @@ onUnmounted(() => {
   position: absolute;
   box-sizing: border-box;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Entry Animation */
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-entry {
+  animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; /* Slight bounce/ease-out */
 }
 
 /* Subtle Glass Selection */

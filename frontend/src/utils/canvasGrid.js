@@ -70,9 +70,25 @@ export const drawGrid = (ctx, zoomLevel, panOffset, canvasWidth, canvasHeight, d
   const startMajorWorldX = Math.floor(worldXMin / majorWorldGridSize) * majorWorldGridSize;
   const startMajorWorldY = Math.floor(worldYMin / majorWorldGridSize) * majorWorldGridSize;
 
-  // --- Set line styles ---
-  const minorColor = darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)';
-  const majorColor = darkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.15)';
+  // --- Set line styles with Dynamic Opacity ---
+  // Base alpha values for normal zoom (>= 0.5)
+  const baseAlphaMinor = 0.08;
+  const baseAlphaMajor = 0.15;
+
+  // Calculate opacity factor based on zoom
+  // 1.0 at zoom >= 0.5, dropping linearly to 0.2 at zoom 0.1
+  const opacityFactor = Math.min(1, Math.max(0.2, zoomLevel * 2));
+
+  const alphaMinor = baseAlphaMinor * opacityFactor;
+  const alphaMajor = baseAlphaMajor * opacityFactor;
+
+  const minorColor = darkMode
+    ? `rgba(255, 255, 255, ${alphaMinor.toFixed(3)})`
+    : `rgba(0, 0, 0, ${alphaMinor.toFixed(3)})`;
+  const majorColor = darkMode
+    ? `rgba(255, 255, 255, ${alphaMajor.toFixed(3)})`
+    : `rgba(0, 0, 0, ${alphaMajor.toFixed(3)})`;
+
   const pixelRatio = window.devicePixelRatio || 1;
   const minorLineWidth = 1 / pixelRatio; // Aim for 1 physical pixel
   const majorLineWidth = 1.5 / pixelRatio; // Slightly thicker major lines
@@ -139,7 +155,3 @@ export const drawGrid = (ctx, zoomLevel, panOffset, canvasWidth, canvasHeight, d
 
   ctx.restore();
 };
-
-// Keep the old getGridSettings function if it's used elsewhere,
-// otherwise it can be removed as drawGrid now calculates density dynamically.
-// export const getGridSettings = (zoomLevel) => { ... };
