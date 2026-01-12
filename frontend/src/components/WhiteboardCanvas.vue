@@ -99,6 +99,11 @@
     <!-- Status message -->
     <StatusMessage :message="statusMessage" />
 
+    <!-- Sync Indicator -->
+    <div class="sync-indicator-container">
+      <SyncIndicator :ydoc="ydoc" :show-text="false" />
+    </div>
+
     <!-- Clipboard handler -->
     <input 
       ref="clipboardInput"
@@ -142,6 +147,7 @@ import Collaborators from './Collaborators.vue';
 import ZoomPanControls from './ZoomPanControls.vue';
 import EraserModeControls from './EraserModeControls.vue';
 import StatusMessage from './StatusMessage.vue';
+import SyncIndicator from './SyncIndicator.vue';
 // Helper modules
 import GridAlignModule from '../modules/GridAlignModule.js';
 import HandwritingStylerModule from '../modules/HandwritingStylerModule.js';
@@ -210,6 +216,7 @@ export default {
     EraserModeControls,
     StatusMessage,
     MovableObject, // Register MovableObject
+    SyncIndicator,
   },
   props: {
     debugMode: { type: Boolean, default: false },
@@ -922,51 +929,65 @@ export default {
       // debugLog("[Canvas] UndoManager zainicjalizowany"); // Commented out
     };
 
+    const ACTION_DESCRIPTIONS = {
+      'local-drawing': 'drawing',
+      'local-erase': 'erase',
+      'local-clear': 'clear canvas',
+      'local-text': 'text edit',
+      'local-add-text': 'added text',
+      'local-image': 'added image',
+      'local-plot': 'added plot',
+      'local-coordsys': 'added coordinate system',
+      'local-movable-drag': 'move',
+      'local-movable-rotate': 'rotate',
+      'local-movable-resize': 'resize',
+      'ai-align': 'AI alignment',
+      'ai-style': 'AI styling',
+      'ai-math': 'AI math solution',
+      'clone-object': 'clone object',
+      'line-detach-binding': 'line detach'
+    };
+
     // 3. Zastąp metody undo/redo
     const undo = () => {
-      // debugLog("[Canvas] Undo - próba wykonania"); // Commented out
-
       try {
         if (undoManager.value && undoManager.value.canUndo()) {
+          const item = undoManager.value.undoStack[undoManager.value.undoStack.length - 1];
+          // Try to get origin from item property or meta
+          const origin = item?.origin || item?.meta?.get('origin') || 'action';
+
           undoManager.value.undo();
-          // debugLog("[Canvas] Undo wykonane"); // Commented out
 
-          // Dodatkowa aktualizacja globalnego stanu (już obsłużona przez listener 'stack-item-popped')
-          // undoRedoState.update(undoManager.value.canUndo(), undoManager.value.canRedo());
+          const description = ACTION_DESCRIPTIONS[origin] || origin;
+          showToast(`Undo: ${description}`, 'info', 2000);
 
-          // Wymuś redraw
           nextTick(() => {
             redrawCanvas(true);
             updateGlobalState();
           });
-        } else {
-          // debugLog("[Canvas] Undo niemożliwe"); // Commented out
         }
       } catch (error) {
-        // console.error("[Canvas] Błąd podczas undo:", error); // Commented out
+        console.error("[Canvas] Error during undo:", error);
       }
     };
 
     const redo = () => {
-      // debugLog("[Canvas] Redo - próba wykonania"); // Commented out
-
       try {
         if (undoManager.value && undoManager.value.canRedo()) {
+          const item = undoManager.value.redoStack[undoManager.value.redoStack.length - 1];
+          const origin = item?.origin || item?.meta?.get('origin') || 'action';
+
           undoManager.value.redo();
-          // debugLog("[Canvas] Redo wykonane"); // Commented out
 
-          // Dodatkowa aktualizacja globalnego stanu (już obsłużona przez listener 'stack-item-added')
-          // undoRedoState.update(undoManager.value.canUndo(), undoManager.value.canRedo());
+          const description = ACTION_DESCRIPTIONS[origin] || origin;
+          showToast(`Redo: ${description}`, 'info', 2000);
 
-          // Wymuś redraw
           nextTick(() => {
             redrawCanvas(true);
           });
-        } else {
-          // debugLog("[Canvas] Redo niemożliwe"); // Commented out
         }
       } catch (error) {
-        // console.error("[Canvas] Błąd podczas redo:", error); // Commented out
+        console.error("[Canvas] Error during redo:", error);
       }
     };
 
@@ -1095,6 +1116,8 @@ export default {
                 }
                 yDrawings.value.push([yElementMap]);
             }, 'ai-math'); // Origin
+
+            showToast("AI math answer applied", "success");
 
             nextTick(() => {
                 updateGlobalState();
@@ -3911,12 +3934,14 @@ export default {
         if (changedIds.length) {
             nextTick(() => {
                 debugLog(`[alignToGrid] Shifted ${changedIds.length} elements by (${shiftX.toFixed(2)}, ${shiftY.toFixed(2)}).`);
+                showToast(`AI aligned ${changedIds.length} elements to grid`, 'success');
                 updateGlobalState();
                 syncModulesWithYjs();
                 redrawCanvas(); // Redraw to show aligned strokes
             });
         } else {
              debugLog('[alignToGrid] No elements needed snapping.');
+             showToast('No elements needed alignment', 'info');
              redrawCanvas();
         }
     };
@@ -3956,14 +3981,11 @@ export default {
                     if (updatedStroke) {
                         debugLog(`[confirmStyleChanges] Updating Y.Map for stroke ID: ${strokeId}`);
                         yMap.set('points', updatedStroke.points); // Update points
-                    } else {
-                         // Log if a changed stroke ID wasn't found in yDrawings
-                        // if (updatedStrokes.some(s => s.id === strokeId)) {
-                        //    console.warn(`[confirmStyleChanges] Mismatch: Updated stroke ${strokeId} present but not found during Y.Map iteration?`);
-                        // }
                     }
                 }
             }, 'ai-style'); // Origin
+
+            showToast(`AI stylized ${updatedStrokes.length} strokes`, 'success');
 
             nextTick(() => {
                 debugLog('[confirmStyleChanges] Yjs transaction complete. Updating global state and redrawing.');
@@ -4383,13 +4405,13 @@ const detachLineBindings = (lineId) => {
 .notifications {
   position: absolute;
   bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   z-index: 2000;
   pointer-events: none;
+  align-items: flex-end;
 }
 
 .notification {
@@ -4444,6 +4466,13 @@ const detachLineBindings = (lineId) => {
 .dark-mode .ai-assistant-toggle {
   background: #333;
   border-color: #555;
+}
+
+.sync-indicator-container {
+  position: absolute;
+  bottom: 25px; /* Aligned with notifications but on left side or pushed up */
+  left: 200px; /* To avoid overlap with ConnectionStatus (bottom-left 10px, width ~150px) and Zoom (bottom-left 20px?) */
+  z-index: 1000;
 }
 </style>
 
