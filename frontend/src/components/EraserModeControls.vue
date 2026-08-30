@@ -71,20 +71,22 @@ export default {
 }
 
 .eraser-mode-btn.active {
-  background-color: #4285f4;
-  border-color: #3367d6;
+  background-color: var(--accent-primary, #2563eb);
+  border-color: var(--accent-primary, #2563eb);
   color: white;
 }
 
-:deep(.dark-mode) .eraser-mode-controls {
-  background-color: #333;
-  color: #f0f0f0;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
-}
+@media (prefers-color-scheme: dark) {
+  .eraser-mode-controls {
+    background-color: #333;
+    color: #f0f0f0;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  }
 
-:deep(.dark-mode) .eraser-mode-btn {
-  border-color: #555;
-  background-color: #444;
-  color: #f0f0f0;
+  .eraser-mode-btn {
+    border-color: #555;
+    background-color: #444;
+    color: #f0f0f0;
+  }
 }
 </style>

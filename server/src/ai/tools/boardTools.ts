@@ -7,6 +7,7 @@ import {
     BoardObject,
 } from '../../models/boardSnapshot';
 import { applyLayoutFixes, LayoutElement } from '../agent/layoutEngine';
+import { logger } from '../../logger';
 
 // ---------- Typy argumentów narzędzi ----------
 
@@ -249,7 +250,7 @@ export function toolDrawBoardPatch(
     const source = (args as DrawBoardPatchArgs).patch || args;
 
     if (Array.isArray(source.creates)) {
-        console.log('[AI DEBUG] Creating objects:', JSON.stringify(source.creates, null, 2));
+        logger.debug('[AI] Creating objects', { count: source.creates.length });
         patch.creates = source.creates.map((raw: any) => {
             const id = raw.id || newId('ai');
             const type = raw.type;
@@ -363,9 +364,9 @@ export function toolDrawBoardPatch(
     // ========== LAYOUT ENGINE INTEGRATION ==========
     // Use the professional Layout Engine to fix coordinates and normalize elements
     if (patch.creates && patch.creates.length > 0) {
-        console.log('[LAYOUT ENGINE] Processing', patch.creates.length, 'new elements');
+        logger.debug('[LAYOUT ENGINE] Processing elements', { count: patch.creates.length });
         patch.creates = applyLayoutFixes(patch.creates as LayoutElement[]) as BoardObject[];
-        console.log('[LAYOUT ENGINE] Applied layout fixes');
+        logger.debug('[LAYOUT ENGINE] Applied layout fixes');
     }
     // ========== END LAYOUT ENGINE ==========
 
@@ -831,13 +832,13 @@ export async function toolSolveEquation(
     snapshot: BoardSnapshot,
     args: SolveEquationArgs,
 ): Promise<{ patch: BoardPatch; result: any }> {
-    console.log('[AI TOOL] Solving equation:', args.equation);
+    logger.info('[AI TOOL] Solving equation', { equation: args.equation });
 
     // Call Python/SymPy solver
     const result = await solveWithSymPy(args.equation);
 
     if (!result.success) {
-        console.error('[AI TOOL] Equation solve failed:', result.error);
+        logger.warn('[AI TOOL] Equation solve failed', { error: result.error });
         return {
             patch: { creates: [], updates: [] },
             result: {

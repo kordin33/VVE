@@ -9,6 +9,7 @@
  */
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
+import { logger } from '../../logger';
 
 // Cache worker for better performance
 let worker: Tesseract.Worker | null = null;
@@ -27,23 +28,20 @@ async function getWorker(): Promise<Tesseract.Worker> {
 
     workerInitializing = true;
     try {
-        console.log('[OCR] Initializing Tesseract worker...');
-        // 'eng' + 'pol' models, but mainly rely on whitelist
+        logger.info('[OCR] Initializing Tesseract worker');
         worker = await Tesseract.createWorker(['eng'], 1, {
             logger: (m) => {
-                // Reduce log spam, only log every 20%
                 if (m.status === 'recognizing text' && Math.round(m.progress * 100) % 20 === 0) {
-                    console.log(`[OCR] Progress: ${Math.round(m.progress * 100)}%`);
+                    logger.debug('[OCR] Progress', { percent: Math.round(m.progress * 100) });
                 }
             },
         });
 
         await worker.setParameters({
-            // Whitelist typical math characters + polish alphabet
             tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-=*/^()[]{}√πΣ∫∂∞≠≤≥±×÷.,?!% ',
             tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
         });
-        console.log('[OCR] Worker initialized');
+        logger.info('[OCR] Worker initialized');
     } finally {
         workerInitializing = false;
     }
@@ -71,7 +69,7 @@ async function preprocessImage(buffer: Buffer): Promise<Buffer> {
 
         return processed;
     } catch (e) {
-        console.error('[OCR] Preprocessing failed:', e);
+        logger.warn('[OCR] Preprocessing failed', { error: (e as Error).message });
         return buffer; // Fallback to original
     }
 }
@@ -87,7 +85,7 @@ function parseBase64(base64Image: string): Buffer {
  */
 export async function extractTextFromImage(base64Image: string): Promise<string> {
     const startTime = Date.now();
-    console.log('[OCR] Starting OCR process...');
+    logger.info('[OCR] Starting OCR process');
 
     try {
         const imageBuffer = parseBase64(base64Image);
@@ -109,11 +107,11 @@ export async function extractTextFromImage(base64Image: string): Promise<string>
             .replace(/x/gi, 'x');  // standardize x
 
         const elapsed = Date.now() - startTime;
-        console.log(`[OCR] Completed in ${elapsed}ms. Text: "${text.substring(0, 50)}..."`);
+        logger.info('[OCR] Completed', { elapsed, textLen: text.length });
 
         return text;
     } catch (error) {
-        console.error('[OCR] Error:', error);
+        logger.error('[OCR] Error', { error: (error as Error).message });
         return '';
     }
 }

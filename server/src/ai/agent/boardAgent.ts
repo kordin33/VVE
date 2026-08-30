@@ -27,9 +27,10 @@ import {
 import { retrieveBoardDocs } from '../docs/boardCapabilities';
 import { buildAgentBoardContext } from './boardAgentContext';
 import { extractTextFromImage, extractEquationsFromText } from '../ocr/ocrService';
+import { logger } from '../../logger';
 
 if (!llmClient) {
-    console.warn('[AI] Board Assistant disabled – no LLM client configured');
+    logger.warn('[AI] Board Assistant disabled – no LLM client configured');
 }
 
 type AgentResult = {
@@ -172,14 +173,14 @@ export async function runBoardAgent(params: {
     image?: string;
     model?: string;
 }): Promise<AgentResult> {
-    console.log('[AI AGENT] Request received:', { userMessage: params.userMessage, model: params.model });
+    logger.info('[AI Agent] Request received', { userMessage: params.userMessage, model: params.model });
     if (!llmClient) {
         return { reply: 'Board assistant is not configured on the server.' };
     }
 
     const { doc, snapshot, userMessage, viewport, image, model } = params;
     const effectiveModel = model || BOARD_AI_MODEL;
-    console.log(`[AI Agent] Using model: ${effectiveModel}`);
+    logger.info('[AI Agent] Using model', { model: effectiveModel });
 
     // Lekki kontekst zamiast pełnego snapshotu
     const agentContext = buildAgentBoardContext(snapshot, viewport, 64);
@@ -204,13 +205,13 @@ export async function runBoardAgent(params: {
     let ocrEquations: string[] = [];
 
     if (isTextOnlyModel && image) {
-        console.log(`[AI Agent] Running OCR for text-only model: ${effectiveModel}`);
+        logger.info('[AI Agent] Running OCR for text-only model', { model: effectiveModel });
         try {
             ocrText = await extractTextFromImage(image);
             ocrEquations = extractEquationsFromText(ocrText);
-            console.log(`[AI Agent] OCR extracted ${ocrEquations.length} potential equations`);
+            logger.info('[AI Agent] OCR extraction complete', { equationCount: ocrEquations.length });
         } catch (err) {
-            console.warn('[AI Agent] OCR failed:', err);
+            logger.warn('[AI Agent] OCR failed', { error: err });
         }
     }
 
@@ -231,7 +232,7 @@ export async function runBoardAgent(params: {
         ];
     } else if (image && isTextOnlyModel) {
         // Text-only model with OCR results
-        console.log(`[AI Agent] Using OCR text instead of image for: ${effectiveModel}`);
+        logger.info('[AI Agent] Using OCR text instead of image', { model: effectiveModel });
         userContent = JSON.stringify({
             boardContext: agentContext,
             request: userMessage,
@@ -240,7 +241,7 @@ export async function runBoardAgent(params: {
             note: 'The ocrExtractedText contains handwritten content from the board (extracted via OCR). Use this to understand what was written by hand.',
         });
     } else if (image) {
-        console.log(`[AI Agent] Skipping image for text-only model: ${effectiveModel}`);
+        logger.debug('[AI Agent] Skipping image for text-only model', { model: effectiveModel });
     }
 
     // RAG: dokumentacja narzędzi / schematu
@@ -274,7 +275,7 @@ export async function runBoardAgent(params: {
             tool_choice: 'auto',
         });
     } catch (error) {
-        console.error('[AI] Error calling AI model:', error);
+        logger.error('[AI] Error calling AI model', { error });
         return {
             reply: `Failed to connect to AI service. ${error instanceof Error ? error.message : 'Unknown error'
                 }`,
@@ -282,21 +283,21 @@ export async function runBoardAgent(params: {
     }
 
     if (!first.choices || first.choices.length === 0) {
-        console.error('[AI] No choices in response:', JSON.stringify(first, null, 2));
+        logger.error('[AI] No choices in response', { model: effectiveModel });
         return { reply: 'No response from AI model. Please try again.' };
     }
 
     const firstMsg = first.choices[0]!.message;
 
     if (!firstMsg) {
-        console.error('[AI] No message in first choice:', JSON.stringify(first.choices[0], null, 2));
+        logger.error('[AI] No message in first choice', { finishReason: first.choices[0]?.finish_reason });
         return { reply: 'AI model returned an invalid response. Please try again.' };
     }
 
     // --- DSML Parsing Fix for DeepSeek V3 ---
     // DeepSeek sometimes returns raw DSML tags instead of native tool_calls
     if (firstMsg.content && firstMsg.content.includes('<｜DSML｜function_calls>')) {
-        console.log('[AI Agent] Detected DSML format, attempting repair...');
+        logger.info('[AI Agent] Detected DSML format, attempting repair');
         try {
             const content = firstMsg.content;
             const toolCalls: any[] = [];
@@ -338,13 +339,13 @@ export async function runBoardAgent(params: {
             }
 
             if (toolCalls.length > 0) {
-                console.log(`[AI Agent] Repaired ${toolCalls.length} DSML tool calls`);
+                logger.info('[AI Agent] Repaired DSML tool calls', { count: toolCalls.length });
                 firstMsg.tool_calls = toolCalls;
                 // Clear content to avoid treating it as text response
                 firstMsg.content = null;
             }
         } catch (e) {
-            console.error('[AI Agent] DSML parsing failed:', e);
+            logger.error('[AI Agent] DSML parsing failed', { error: e });
         }
     }
     // ----------------------------------------
@@ -353,10 +354,9 @@ export async function runBoardAgent(params: {
     const hasToolCalls = !!firstMsg.tool_calls && firstMsg.tool_calls.length > 0;
 
     if (!hasContent && !hasToolCalls) {
-        console.error('[AI] Empty response from model:', {
+        logger.error('[AI] Empty response from model', {
             model: BOARD_AI_MODEL,
-            message: firstMsg,
-            finish_reason: first.choices[0]?.finish_reason,
+            finishReason: first.choices[0]?.finish_reason,
         });
         return {
             reply:
@@ -373,7 +373,7 @@ export async function runBoardAgent(params: {
         );
 
         if (wasDrawingRequest) {
-            console.warn(`[AI] Model ${effectiveModel} returned text but user requested drawing. No tool called.`);
+            logger.warn('[AI] Model returned text but user requested drawing, no tool called', { model: effectiveModel });
             return {
                 reply: `${firstMsg.content ?? ''}\n\n⚠️ _Model nie wywołał żadnego narzędzia rysowania. Spróbuj użyć innego modelu lub sformułuj prośbę inaczej._`
             };
@@ -390,7 +390,7 @@ export async function runBoardAgent(params: {
     // 2) Wykonanie tooli po stronie serwera
     for (const toolCall of firstMsg.tool_calls!) {
         if (!('function' in toolCall) || !toolCall.function) {
-            console.warn('[AI] Skipping tool call without function property:', toolCall);
+            logger.warn('[AI] Skipping tool call without function property', { toolCallId: toolCall.id });
             continue;
         }
 
@@ -398,12 +398,9 @@ export async function runBoardAgent(params: {
         let args: any;
         try {
             args = JSON.parse(rawArgs || '{}');
-            console.log(
-                `[AI Agent] Tool Call: ${name}`,
-                JSON.stringify(args).substring(0, 200),
-            );
+            logger.info('[AI Agent] Tool call', { tool: name, argsPreview: JSON.stringify(args).substring(0, 200) });
         } catch (e) {
-            console.error('[AI] Failed to parse tool arguments:', e);
+            logger.error('[AI] Failed to parse tool arguments', { tool: name, error: e });
             toolMessages.push({
                 role: 'tool',
                 tool_call_id: toolCall.id,
@@ -456,7 +453,7 @@ export async function runBoardAgent(params: {
                     });
                     latex = simp.choices[0]?.message.content ?? original;
                 } catch (e) {
-                    console.error('[AI] Error simplifying equation:', e);
+                    logger.error('[AI] Error simplifying equation', { error: e });
                     toolMessages.push({
                         role: 'tool',
                         tool_call_id: toolCall.id,
@@ -505,7 +502,7 @@ export async function runBoardAgent(params: {
                     });
                     latex = simp.choices[0]?.message.content ?? original;
                 } catch (e) {
-                    console.error('[AI] Error converting text to latex:', e);
+                    logger.error('[AI] Error converting text to latex', { error: e });
                     toolMessages.push({
                         role: 'tool',
                         tool_call_id: toolCall.id,
@@ -629,7 +626,7 @@ export async function runBoardAgent(params: {
             messages: [...baseMessages, firstMsg, ...toolMessages],
         });
     } catch (error) {
-        console.error('[AI] Error in second AI model call:', error);
+        logger.error('[AI] Error in second AI model call', { error });
         return {
             reply: 'Failed to generate final response from AI service.',
             ...(lastPatch && { patch: lastPatch }),

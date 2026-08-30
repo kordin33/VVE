@@ -8,6 +8,9 @@ import rough from 'roughjs';
 import * as math from 'mathjs';
 import { drawStyledPen } from './penStyles';
 
+// 1.2: Cache Rough.js instance per canvas (avoid recreating on every drawElement call)
+const roughCanvasCache = new WeakMap();
+
 // Throttle function to limit the rate of function calls
 export const throttle = (fn, delay) => {
   let lastCall = 0;
@@ -45,7 +48,15 @@ export const drawElement = (
 
 
   const type = element.type;
-  const rc = rcOverride || rough.canvas(context.canvas);
+  // 1.2: Reuse cached Rough.js instance for the same canvas
+  let rc = rcOverride;
+  if (!rc) {
+    rc = roughCanvasCache.get(context.canvas);
+    if (!rc) {
+      rc = rough.canvas(context.canvas);
+      roughCanvasCache.set(context.canvas, rc);
+    }
+  }
 
   // Base style
   const baseColor = element.strokeColor || element.color || '#000000';
@@ -109,7 +120,18 @@ export const drawElement = (
       // --- END OPTIMIZATION ---
 
       const points = element.points || [];
-      if (points.length < 2) break;
+      if (points.length === 0) break;
+      // P0-FIX: Render single-point strokes as dots
+      if (points.length === 1) {
+        const pt = Array.isArray(points[0]) ? { x: points[0][0], y: points[0][1] } : points[0];
+        context.save();
+        context.fillStyle = element.strokeColor || element.color || color;
+        context.beginPath();
+        context.arc(pt.x, pt.y, Math.max(lw / 2, 1.5), 0, Math.PI * 2);
+        context.fill();
+        context.restore();
+        break;
+      }
       const penStyle = element.penStyle || 'technical';
       const presetConfig = element.penConfig || (penStyleOptions.presets ? penStyleOptions.presets[penStyle] : {}) || {};
       const globalSmoothing = typeof penStyleOptions.smoothingFactor === 'number'

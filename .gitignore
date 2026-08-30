@@ -24,6 +24,8 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+frontend/test-results/
+frontend/playwright-report/
 
 # === LOGS ===
 logs/

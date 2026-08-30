@@ -1,9 +1,10 @@
 import OpenAI from 'openai';
 import { config } from '../../config';
+import { logger } from '../../logger';
 
 const apiKey = config.openRouterApiKey;
 if (!apiKey) {
-    console.warn('[AI] No OpenRouter API key configured – Board Assistant disabled');
+    logger.warn('[AI] No OpenRouter API key configured – Board Assistant disabled');
 }
 
 const baseURL = config.aiBaseUrl;

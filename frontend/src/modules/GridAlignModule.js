@@ -55,13 +55,13 @@ export default class GridAlignModule {
   // Aktywacja/deaktywacja modułu
   enable() {
     this.enabled = true;
-    console.log('[Aligner] Enabled'); // DEBUG
+    // console.log('[Aligner] Enabled'); // DEBUG
     return this;
   }
 
   disable() {
     this.enabled = false;
-    console.log('[Aligner] Disabled'); // DEBUG
+    // console.log('[Aligner] Disabled'); // DEBUG
     // Reset state if needed when disabled
     this.baselines = [];
     return this;
@@ -70,14 +70,14 @@ export default class GridAlignModule {
   // Ustawienie opcji
   setOptions(options) {
     this.options = { ...this.options, ...options };
-    console.log('[Aligner] Options updated:', this.options); // DEBUG
+    // console.log('[Aligner] Options updated:', this.options); // DEBUG
     return this;
   }
 
   // Dodanie ścieżki do modułu
   addStroke(stroke) {
     if (!this.enabled) return this;
-    console.log(`[Aligner] addStroke called with stroke ID: ${stroke.id}`); // DEBUG
+    // console.log(`[Aligner] addStroke called with stroke ID: ${stroke.id}`); // DEBUG
     const normalizedPoints = toStoredPoints(getStrokePoints(stroke));
     const normalizedRaw = stroke.rawPoints ? toStoredPoints(stroke.rawPoints) : null;
     this.strokes.push({
@@ -93,7 +93,7 @@ export default class GridAlignModule {
 
   // Ustawienie wszystkich ścieżek
   setStrokes(strokes) {
-    console.log(`[Aligner] setStrokes called with ${strokes.length} strokes.`); // DEBUG
+    // console.log(`[Aligner] setStrokes called with ${strokes.length} strokes.`); // DEBUG
     this.strokes = strokes.map(stroke => {
       const normalizedPoints = toStoredPoints(getStrokePoints(stroke));
       const normalizedRaw = stroke.rawPoints ? toStoredPoints(stroke.rawPoints) : null;
@@ -112,16 +112,16 @@ export default class GridAlignModule {
   // Wykrywanie linii bazowych
   detectBaselines() {
     if (!this.enabled) {
-        console.log('[Aligner] detectBaselines skipped: disabled');
+        // console.log('[Aligner] detectBaselines skipped: disabled');
         return this;
     }
-    console.log(`[Aligner] detectBaselines called with ${this.strokes.length} strokes.`); // DEBUG
+    // console.log(`[Aligner] detectBaselines called with ${this.strokes.length} strokes.`); // DEBUG
 
     // Resetuj linie bazowe
     this.baselines = [];
 
     if (!this.strokes.length) {
-        console.log('[Aligner] detectBaselines skipped: no strokes');
+        // console.log('[Aligner] detectBaselines skipped: no strokes');
         return this;
     }
 
@@ -137,7 +137,7 @@ export default class GridAlignModule {
     }).filter(s => s.avgY !== null); // Filter out strokes without points
 
     if (!strokesWithY.length) {
-        console.log('[Aligner] detectBaselines skipped: no valid strokes with points found.');
+        // console.log('[Aligner] detectBaselines skipped: no valid strokes with points found.');
         return this;
     }
 
@@ -169,7 +169,7 @@ export default class GridAlignModule {
     if (currentGroup.length) {
       lineGroups.push(currentGroup);
     }
-    console.log(`[Aligner] Found ${lineGroups.length} potential line groups.`); // DEBUG
+    // console.log(`[Aligner] Found ${lineGroups.length} potential line groups.`); // DEBUG
 
     // Dla każdej grupy oblicz linię bazową
     lineGroups.forEach(group => {
@@ -181,26 +181,26 @@ export default class GridAlignModule {
         strokes: group.map(s => s.id)
       });
     });
-    console.log(`[Aligner] Detected ${this.baselines.length} baselines.`); // DEBUG
+    // console.log(`[Aligner] Detected ${this.baselines.length} baselines.`); // DEBUG
     return this;
   }
 
   // Wyrównywanie do siatki
   alignToGrid() {
     if (!this.enabled || !this.strokes.length) {
-        console.log('[Aligner] alignToGrid skipped: disabled or no strokes');
+        // console.log('[Aligner] alignToGrid skipped: disabled or no strokes');
         return []; // Return empty array if skipped
     }
-    console.log('[Aligner] alignToGrid called.'); // DEBUG
+    // console.log('[Aligner] alignToGrid called.'); // DEBUG
 
     // Najpierw wykryj linie bazowe jeżeli jeszcze nie zostały wykryte
     if (!this.baselines.length) {
-      console.log('[Aligner] No baselines found, detecting...'); // DEBUG
+      // console.log('[Aligner] No baselines found, detecting...'); // DEBUG
       this.detectBaselines();
     }
 
     if (!this.baselines.length) {
-        console.log('[Aligner] alignToGrid skipped: no baselines detected');
+        // console.log('[Aligner] alignToGrid skipped: no baselines detected');
         return []; // Return empty array if no baselines
     }
 
@@ -220,7 +220,7 @@ export default class GridAlignModule {
       const effectiveOffset = offsetY * (this.options.snapStrength / 100);
       if (Math.abs(effectiveOffset) < 0.1) return; // Skip if offset is negligible
 
-      console.log(`[Aligner] Baseline Y: ${baseline.y}, Nearest Grid: ${nearestGridLine}, Offset: ${offsetY}, Effective Offset: ${effectiveOffset}`); // DEBUG
+      // console.log(`[Aligner] Baseline Y: ${baseline.y}, Nearest Grid: ${nearestGridLine}, Offset: ${offsetY}, Effective Offset: ${effectiveOffset}`); // DEBUG
 
       baseline.strokes.forEach(strokeId => {
         const strokeIndex = this.strokes.findIndex(s => s.id === strokeId);
@@ -258,7 +258,7 @@ export default class GridAlignModule {
     });
 
     // Nie aktualizujemy this.baselines tutaj, ponieważ drawBaselines je przelicza
-    console.log(`[Aligner] alignToGrid finished. Returning ${changedStrokes.length} changed strokes.`); // DEBUG
+    // console.log(`[Aligner] alignToGrid finished. Returning ${changedStrokes.length} changed strokes.`); // DEBUG
     return changedStrokes;
   }
 
@@ -308,7 +308,7 @@ export default class GridAlignModule {
 
   // Wyczyść wszystkie dane
   clear() {
-    console.log('[Aligner] clear called'); // DEBUG
+    // console.log('[Aligner] clear called'); // DEBUG
     this.strokes = [];
     this.baselines = [];
     return this;

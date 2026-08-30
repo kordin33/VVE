@@ -83,11 +83,16 @@ export default {
         this.$refs.exportTextarea.select();
       });
     },
-    copyToClipboard() {
-      this.$refs.exportTextarea.select();
-      document.execCommand('copy');
-      // Could be replaced with navigator.clipboard.writeText in modern browsers
-      alert('Copied to clipboard!');
+    async copyToClipboard() {
+      try {
+        await navigator.clipboard.writeText(this.exportedState);
+        alert('Copied to clipboard!');
+      } catch {
+        // Fallback for older browsers / insecure contexts
+        this.$refs.exportTextarea.select();
+        document.execCommand('copy');
+        alert('Copied to clipboard!');
+      }
     },
     showImportDialog() {
       this.importText = '';

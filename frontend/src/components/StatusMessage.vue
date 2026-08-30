@@ -22,7 +22,7 @@ export default {
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  background-color: #4285f4;
+  background-color: var(--accent-primary, #2563eb);
   color: white;
   padding: 5px 10px;
   border-radius: 3px;

@@ -131,7 +131,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { archiveRoom, createRoom, fetchRooms, updateRoom } from '../services/roomService.js';
 
 const OWNER_SECRET_KEY = 'whiteboard_room_owner_secrets';
@@ -160,6 +160,8 @@ const createForm = reactive({
 
 const ownerSecrets = ref(loadOwnerSecrets());
 let searchDebounce = null;
+// 7.8: AbortController to cancel stale search requests
+let searchAbortController = null;
 let createHintTimer = null;
 
 const shareBaseUrl = computed(() => {
@@ -185,12 +187,16 @@ watch(
 
 watch([searchTerm, showArchived], () => {
   if (searchDebounce) clearTimeout(searchDebounce);
+  // 7.8: Abort previous in-flight search request
+  if (searchAbortController) searchAbortController.abort();
+  searchAbortController = new AbortController();
+  const signal = searchAbortController.signal;
   searchDebounce = setTimeout(() => {
-    loadRooms();
+    loadRooms(signal);
   }, 300);
 });
 
-async function loadRooms() {
+async function loadRooms(signal) {
   if (!props.visible) return;
   isLoading.value = true;
   managerError.value = '';
@@ -199,13 +205,16 @@ async function loadRooms() {
       search: searchTerm.value.trim(),
       includeArchived: showArchived.value,
       limit: 40,
+      signal, // 7.8: Pass abort signal to fetch
     });
+    if (signal?.aborted) return; // Discard stale result
     rooms.value = Array.isArray(response?.rooms) ? response.rooms : [];
   } catch (error) {
+    if (error?.name === 'AbortError') return; // 7.8: Ignore aborted requests
     rooms.value = [];
     managerError.value = error.payload?.error || error.message || 'Unable to load rooms right now.';
   } finally {
-    isLoading.value = false;
+    if (!signal?.aborted) isLoading.value = false;
   }
 }
 
@@ -343,6 +352,12 @@ onMounted(() => {
   if (props.visible) {
     loadRooms();
   }
+});
+
+onBeforeUnmount(() => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  if (createHintTimer) clearTimeout(createHintTimer);
+  if (searchAbortController) searchAbortController.abort();
 });
 </script>
 

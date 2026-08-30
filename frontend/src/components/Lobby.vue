@@ -84,7 +84,7 @@
 </template>
 
 <script>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
 import axios from 'axios';
 
 import { resolveBackendBaseUrl } from '../services/backendUrl';
@@ -99,6 +99,8 @@ export default {
     const recentRooms = ref([]);
     const activeRooms = ref([]);
     const loading = ref(false);
+    // 5.1: Store interval ID for cleanup
+    let roomPollInterval = null;
     const loadingRooms = ref(false);
     const activeTab = ref('active');
 
@@ -125,7 +127,8 @@ export default {
       }
       fetchRooms();
       // Poll for room updates every 10 seconds
-      setInterval(fetchRooms, 10000);
+      // 5.1: Store interval ID for cleanup
+      roomPollInterval = setInterval(fetchRooms, 10000);
     });
 
     const createRoom = async () => {
@@ -163,6 +166,14 @@ export default {
       if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
       return date.toLocaleDateString();
     };
+
+    // 5.1: Clear interval on unmount to prevent memory leak
+    onBeforeUnmount(() => {
+      if (roomPollInterval) {
+        clearInterval(roomPollInterval);
+        roomPollInterval = null;
+      }
+    });
 
     return {
       roomIdInput,

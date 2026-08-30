@@ -22,7 +22,7 @@ export function useAiStore() {
         }
     };
 
-    const runBoardAssistant = async (boardId, message, viewport, screenshotDataUrl, model) => {
+    const runBoardAssistant = async (boardId, message, viewport, screenshotDataUrl, model, wsToken) => {
         if (state.isRunning) return;
         state.isRunning = true;
         state.error = null;
@@ -38,9 +38,12 @@ export function useAiStore() {
             const baseUrl = resolveBackendBaseUrl();
             state.currentStatus = `Łączenie z ${model?.split('/')[1] || 'AI'}...`;
 
+            const headers = { 'Content-Type': 'application/json' };
+            if (wsToken) headers['X-Board-Token'] = wsToken;
+
             const res = await fetch(`${baseUrl}/api/ai/board-assistant`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({ boardId, message, viewport, image: screenshotDataUrl, model }),
             });
 

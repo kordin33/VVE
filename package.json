@@ -1,8 +1,2 @@
 {
-  "dependencies": {
-    "y-protocols": "^1.0.6"
-  },
-  "devDependencies": {
-    "@previewjs/config": "^7.0.1"
-  }
 }

@@ -1,5 +1,6 @@
 import nodeFetch, { RequestInit, Response } from 'node-fetch';
 import { HttpError } from './httpError';
+import { logger } from '../logger';
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -80,16 +81,14 @@ export async function callGrok({
         throw new HttpError(502, `Invalid OpenRouter response for model ${currentModel}: missing content.`);
       }
 
-      // Success! Return the result
-      console.log(`[AI] Successfully used model: ${currentModel}`);
+      logger.info('[AI] Successfully used model', { model: currentModel });
       return content.trim();
     } catch (error) {
       lastError = error as Error;
-      console.warn(`[AI] Model ${currentModel} failed:`, (error as Error).message);
+      logger.warn('[AI] Model failed', { model: currentModel, error: (error as Error).message });
 
-      // If this is not the last model, continue to next fallback
       if (currentModel !== fallbackModels[fallbackModels.length - 1]) {
-        console.log(`[AI] Trying fallback model...`);
+        logger.info('[AI] Trying fallback model');
         continue;
       }
 

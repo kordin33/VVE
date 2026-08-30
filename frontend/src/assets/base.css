@@ -32,8 +32,6 @@
 
   --color-heading: var(--vt-c-text-light-1);
   --color-text: var(--vt-c-text-light-1);
-
-  --section-gap: 160px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,14 +48,8 @@
   }
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  position: relative;
-  font-weight: normal;
-}
+/* 8.1: Removed position:relative (conflicts with absolute positioning in whiteboard) */
+/* box-sizing already handled in style.css global reset */
 
 body {
   min-height: 100vh;

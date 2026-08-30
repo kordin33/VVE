@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VVE. Audyt techniczny i kontrakt Pilota</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f5f1;
+      --card: #ffffff;
+      --ink: #172033;
+      --muted: #647084;
+      --line: #dfe3e8;
+      --navy: #152238;
+      --blue: #315f91;
+      --blue-soft: #e8f0f8;
+      --green: #267356;
+      --green-soft: #e7f4ed;
+      --amber: #9a6414;
+      --amber-soft: #fff3d8;
+      --red: #a43b3b;
+      --red-soft: #fdeaea;
+      --violet: #6b4aa0;
+      --violet-soft: #f0eafa;
+      --shadow: 0 14px 40px rgba(33, 43, 61, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.56;
+    }
+    main { width: min(1160px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 80px; }
+    h1, h2, h3, h4 { margin: 0; line-height: 1.16; color: var(--navy); }
+    h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 600; }
+    h1 { font-size: clamp(2.15rem, 5vw, 4rem); letter-spacing: -.035em; }
+    h2 { font-size: clamp(1.65rem, 3vw, 2.35rem); letter-spacing: -.025em; }
+    h3 { font-size: 1.08rem; }
+    h4 { font-size: .93rem; }
+    p { margin: 0; }
+    a { color: var(--blue); }
+    code, .code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .82em;
+      overflow-wrap: anywhere;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .section { padding: clamp(22px, 4vw, 38px); margin-top: 28px; }
+    .kicker {
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .19em;
+      text-transform: uppercase;
+    }
+    .lead { max-width: 880px; color: var(--muted); font-size: 1.08rem; }
+    .muted { color: var(--muted); }
+    .small { font-size: .86rem; }
+    .tiny { font-size: .75rem; }
+    .stack > * + * { margin-top: 14px; }
+    .stack-lg > * + * { margin-top: 22px; }
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header { padding: clamp(24px, 5vw, 48px); border-top: 5px solid var(--navy); }
+    .header-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+    .pill, .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: .72rem;
+      font-weight: 750;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .pill { border-color: var(--line); background: #fafbfc; color: var(--muted); }
+    .confirmed { color: var(--red); background: var(--red-soft); border-color: #efbcbc; }
+    .risk { color: var(--amber); background: var(--amber-soft); border-color: #eacb8d; }
+    .discuss { color: var(--violet); background: var(--violet-soft); border-color: #cdbce5; }
+    .good { color: var(--green); background: var(--green-soft); border-color: #b7dcc8; }
+    .strong { color: var(--green); background: var(--green-soft); border-color: #b7dcc8; }
+    .worth { color: var(--amber); background: var(--amber-soft); border-color: #eacb8d; }
+    .p0 { color: #8d2222; background: #ffe4e4; border-color: #e9a2a2; }
+    .p1 { color: var(--red); background: var(--red-soft); border-color: #efbcbc; }
+    .p2 { color: var(--amber); background: var(--amber-soft); border-color: #eacb8d; }
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .legend > div { padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: #fbfbfa; }
+    .metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-top: 24px; }
+    .metric { padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: #fbfbfa; }
+    .metric b { display: block; font-family: Georgia, "Times New Roman", serif; font-size: 1.55rem; color: var(--navy); }
+    nav { padding: 18px 22px; margin-top: 18px; }
+    nav ul { display: flex; flex-wrap: wrap; gap: 8px 18px; list-style: none; padding: 0; margin: 0; }
+    nav a { text-decoration: none; font-size: .82rem; font-weight: 700; }
+    .verdict { border-left: 5px solid var(--red); }
+    .verdict-grid > article, .decision-grid > article, .qa-grid > article {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fcfcfb;
+    }
+    .verdict-grid article p, .decision-grid article p, .qa-grid article p { margin-top: 9px; }
+    .callout {
+      padding: 18px 20px;
+      border-radius: 14px;
+      background: var(--violet-soft);
+      border: 1px solid #d4c7e8;
+      color: #4d3a69;
+    }
+    .decision-grid article { border-top: 4px solid var(--violet); }
+    .question { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: #4d3a69; font-weight: 700; }
+    .finding-list { display: grid; gap: 12px; margin-top: 20px; }
+    .finding {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fcfcfb;
+    }
+    .finding p + p { margin-top: 8px; }
+    .evidence { color: var(--muted); font-size: .78rem; }
+    .candidate {
+      padding: clamp(20px, 4vw, 32px);
+      margin-top: 20px;
+      border-left: 5px solid var(--blue);
+    }
+    .candidate-title { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+    .candidate > p { margin-top: 14px; }
+    .diagrams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 20px; }
+    .diagram {
+      padding: 16px;
+      min-height: 210px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fafaf8;
+      overflow: hidden;
+    }
+    .diagram h4 { margin-bottom: 13px; text-transform: uppercase; letter-spacing: .1em; font-size: .68rem; color: var(--muted); }
+    .flow { min-height: 155px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px; }
+    .flow.row { flex-direction: row; flex-wrap: wrap; align-content: center; }
+    .node {
+      max-width: 100%;
+      padding: 8px 11px;
+      border: 1px solid #c9d0d8;
+      border-radius: 9px;
+      background: white;
+      color: var(--navy);
+      font-size: .76rem;
+      text-align: center;
+      box-shadow: 0 4px 10px rgba(25, 35, 52, .05);
+    }
+    .node.deep { background: var(--navy); color: white; border-color: var(--navy); }
+    .node.bad { border-color: #e2a5a5; background: var(--red-soft); color: #7f2b2b; }
+    .node.good-node { border-color: #9ecdb5; background: var(--green-soft); color: #215f47; }
+    .arrow { color: #8090a3; font-weight: 800; line-height: 1; }
+    .candidate-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+    .candidate-meta > div { padding: 14px; border-top: 1px solid var(--line); }
+    .candidate-meta p, .candidate-meta ul { margin: 8px 0 0; color: var(--muted); font-size: .82rem; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 5px; }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    th, td { padding: 10px 9px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; }
+    .table-wrap { overflow-x: auto; margin-top: 18px; }
+    .sequence { counter-reset: step; list-style: none; padding: 0; }
+    .sequence li { position: relative; padding: 0 0 14px 38px; }
+    .sequence li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: -1px;
+      width: 25px;
+      height: 25px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--navy);
+      color: white;
+      font-size: .72rem;
+      font-weight: 800;
+    }
+    .sequence li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 25px; bottom: 0; width: 1px; background: var(--line); }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 14px 16px;
+      background: #fcfcfb;
+    }
+    details + details { margin-top: 10px; }
+    summary { cursor: pointer; color: var(--navy); font-weight: 800; }
+    details p, details ul { margin-top: 12px; color: var(--muted); font-size: .86rem; }
+    .priority { display: grid; gap: 12px; margin-top: 20px; }
+    .priority article { display: grid; grid-template-columns: 42px 1fr; gap: 14px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: #fcfcfb; }
+    .priority .num { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; background: var(--navy); color: white; font-family: Georgia, "Times New Roman", serif; font-size: 1.2rem; }
+    footer { margin-top: 28px; padding: 18px 4px; color: var(--muted); font-size: .78rem; }
+    @media (max-width: 900px) {
+      .metrics { grid-template-columns: repeat(3, 1fr); }
+      .grid-3, .grid-4, .candidate-meta { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 680px) {
+      main { width: min(100% - 18px, 1160px); padding-top: 14px; }
+      .header, .section, .candidate { border-radius: 13px; }
+      .grid-2, .grid-3, .grid-4, .legend, .diagrams, .candidate-meta { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .finding { grid-template-columns: 1fr; }
+      nav { position: static; }
+      .flow.row { flex-direction: column; }
+      .priority article { grid-template-columns: 34px 1fr; }
+      .priority .num { width: 32px; height: 32px; }
+    }
+    @media print {
+      body { background: white; }
+      main { width: 100%; padding: 0; }
+      .card, .candidate { box-shadow: none; break-inside: avoid; }
+      nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header class="card header stack-lg">
+    <div class="topline">
+      <p class="kicker">VVE · audyt całego codebase'u · decyzje z 29 sierpnia 2026</p>
+      <span class="pill">tylko analiza, bez zmian w kodzie</span>
+    </div>
+    <div class="stack">
+      <h1>Audyt techniczny i kontrakt Pilota</h1>
+      <p class="lead">Połączony audyt snapshotu <span class="code">codex/full-dev-snapshot-2026-05-18</span>, review diffu względem <span class="code">origin/main</span>, ręczne testy aplikacji oraz decyzje produktowe zamknięte z Kordianem. Nietypowe reguły dostępu i retencji są tu kontraktem, nie błędem do automatycznego naprawienia.</p>
+    </div>
+    <div class="header-meta">
+      <span class="pill">commit 1815758</span>
+      <span class="pill">merge-base 10e7298</span>
+      <span class="pill">114 zmienionych plików</span>
+      <span class="pill">30,8 tys. linii źródłowych</span>
+    </div>
+    <div class="legend">
+      <div><span class="status confirmed">potwierdzony błąd</span><p class="small muted" style="margin-top:9px">Odtworzony w aplikacji, teście wykonawczym albo bezpośredniej ścieżce kodu.</p></div>
+      <div><span class="status risk">ryzyko techniczne</span><p class="small muted" style="margin-top:9px">Kod nie gwarantuje oczekiwanego zachowania. Wymaga testu awarii lub decyzji o skali.</p></div>
+      <div><span class="status discuss">do omówienia</span><p class="small muted" style="margin-top:9px">Nietypowe zachowanie może być celowe. Najpierw ustalamy intencję, potem zmieniamy kod.</p></div>
+    </div>
+    <div class="metrics">
+      <div class="metric"><b>2</b><span class="small muted">blokery P0 z QA</span></div>
+      <div class="metric"><b>7</b><span class="small muted">defektów w diffie</span></div>
+      <div class="metric"><b>9</b><span class="small muted">kandydatów architektury</span></div>
+      <div class="metric"><b>16/19</b><span class="small muted">testów serwera</span></div>
+      <div class="metric"><b>76/76</b><span class="small muted">testów frontendu</span></div>
+      <div class="metric"><b>20</b><span class="small muted">alertów zależności</span></div>
+    </div>
+  </header>
+
+  <nav class="card" aria-label="Spis treści">
+    <ul>
+      <li><a href="#wniosek">Wniosek</a></li>
+      <li><a href="#decyzje">Ustalenia Pilota</a></li>
+      <li><a href="#blokery">Potwierdzone blokery</a></li>
+      <li><a href="#architektura">Architektura</a></li>
+      <li><a href="#review">Review diffu</a></li>
+      <li><a href="#qa">QA i interfejs</a></li>
+      <li><a href="#testy">Testy i zależności</a></li>
+      <li><a href="#kolejnosc">Kolejność pracy</a></li>
+    </ul>
+  </nav>
+
+  <section id="wniosek" class="card section verdict stack-lg">
+    <div class="stack">
+      <p class="kicker">Wniosek</p>
+      <h2>Snapshot działa, ale nie ma jeszcze gwarancji potrzebnych w enterprise</h2>
+      <p class="lead">Rdzeń tablicy i współpraca dwóch użytkowników działają w jednym lokalnym procesie. Nie rekomenduję jednak wdrożenia wielotenantowego ani skalowania poziomego przed zamknięciem izolacji tablic i trwałości zmian.</p>
+    </div>
+    <div class="grid grid-3 verdict-grid">
+      <article>
+        <span class="status confirmed">bezpieczeństwo</span>
+        <h3 style="margin-top:12px">Prawo zapisu nie jest jedną regułą serwera</h3>
+        <p class="small muted">Rola, identyfikator tablicy, archiwizacja i tryb tylko do odczytu są rozstrzygane w różnych miejscach. Część ścieżek nie sprawdza wszystkich warunków.</p>
+      </article>
+      <article>
+        <span class="status risk">integralność danych</span>
+        <h3 style="margin-top:12px">Wiele procesów może rozjechać stan Yjs</h3>
+        <p class="small muted">Żywy dokument jest własnością procesu. Log przyrostowy nie bierze udziału w odtwarzaniu, a kompakcja może skasować nowszą zmianę.</p>
+      </article>
+      <article>
+        <span class="status risk">wiarygodność testów</span>
+        <h3 style="margin-top:12px">Zielony frontend mówi za mało</h3>
+        <p class="small muted">Duża część testów sprawdza frazy w źródłach. Brakuje wykonywalnych scenariuszy reconnectu, dwóch instancji, archiwizacji i konfliktów.</p>
+      </article>
+    </div>
+    <div class="callout">
+      <strong>Zasada dalszej pracy.</strong> Nie przebudowujemy projektu z samego audytu. Najpierw potwierdzamy kontrakt produktu i powód nietypowej decyzji. Bez dyskusji można ruszyć tylko te punkty, które są jednoznacznym obejściem autoryzacji, utratą danych albo niedziałającym kontraktem frontend-backend.
+    </div>
+  </section>
+
+  <section id="decyzje" class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Kontrakt Pilota</p>
+      <h2>Nietypowe decyzje zostały rozstrzygnięte</h2>
+      <p class="lead">Ta sekcja zastępuje wcześniejszą listę pytań. Implementacja ma realizować poniższy model. Agent nie powinien "naprawiać" go w stronę kont użytkowników, indywidualnych nazw nauczycieli, pełnego offline ani przedwczesnego skalowania rozproszonego.</p>
+    </div>
+
+    <div class="grid grid-2 decision-grid">
+      <article>
+        <span class="status good">dostęp</span>
+        <h3 style="margin-top:12px">Link jest poświadczeniem, nie kontem</h3>
+        <p class="small muted">Teacher i Student nie zakładają kont. Link działa na każdym urządzeniu i może być otwarty w kilku sesjach. System nie próbuje ustalać, kto fizycznie dostał przekazany link.</p>
+        <p class="question">Jeden aktywny Teacher Access Link na Teachera i jeden Board Access Link na Managed Board. Regeneracja unieważnia stary link, ale zachowuje dane.</p>
+      </article>
+      <article>
+        <span class="status good">własność</span>
+        <h3 style="margin-top:12px">Jedna tablica, dokładnie jeden Teacher</h3>
+        <p class="small muted">Managed Board zawsze ma jednego Owning Teachera. Student lub grupa do trzech Students może pracować bez jego obecności. Nie ma współwłasności ani przekazania roli innemu Teacherowi.</p>
+        <p class="question">Student może edytować wspólne obiekty i eksportować PDF. Nie może wyczyścić całej tablicy, zmienić linku ani zakończyć Board Access.</p>
+      </article>
+      <article>
+        <span class="status good">tożsamość</span>
+        <h3 style="margin-top:12px">Stały alias publiczny</h3>
+        <p class="small muted">Każdy Student widzi dokładnie <span class="code">Dawid Furmaniuk - Matsin</span>. Prawdziwa wewnętrzna etykieta Teachera zostaje w panelu administracyjnym. Student nie zmienia własnej etykiety ani nazwy Teachera.</p>
+      </article>
+      <article>
+        <span class="status good">retencja</span>
+        <h3 style="margin-top:12px">Dwanaście miesięcy i siedem dni</h3>
+        <p class="small muted">Board Access wygasa po 12 miesiącach. Wygaśnięcie lub ręczne zakończenie odbiera dostęp od razu, a system usuwa dane po siedmiu dniach. Pilot nie ma odzyskiwania ani przedłużania.</p>
+      </article>
+      <article>
+        <span class="status good">offline</span>
+        <h3 style="margin-top:12px">Bez sieci tylko odczyt</h3>
+        <p class="small muted">Po utracie połączenia tablica blokuje mutacje, ale pozwala nawigować i eksportować. Edycja wraca po pełnej synchronizacji. Pełny local-first pozostaje pracą na przyszłość.</p>
+      </article>
+      <article>
+        <span class="status good">funkcje ukryte</span>
+        <h3 style="margin-top:12px">Pilot nie pokazuje eksperymentów</h3>
+        <p class="small muted">AI, Chemistry, Grid Align, publiczne lobby, peer rooms i niedokończone E2E są poza produktem. Debug panel zostaje narzędziem wewnętrznym. Kod może pozostać, lecz produkcja nie może udostępnić tych ścieżek.</p>
+      </article>
+      <article>
+        <span class="status good">narzędzia lekcyjne</span>
+        <h3 style="margin-top:12px">Każda widoczna funkcja jest krytyczna</h3>
+        <p class="small muted">Rysowanie, tekst, zaznaczanie, transformacje, figury, linie, kalkulator, układy współrzędnych, wykresy, obrazy oraz import i eksport PDF muszą być dopracowane w pełnym przepływie współpracy.</p>
+        <p class="question">Handwriting Styler zmienia się w prosty wybór stylu wejścia: Mysz z mocnym wygładzaniem oraz Pióro dostrojone do Apple Pencila i tabletów.</p>
+      </article>
+      <article>
+        <span class="status good">urządzenia</span>
+        <h3 style="margin-top:12px">Komputer i iPad są równorzędne</h3>
+        <p class="small muted">Wymagane są komputer z myszą, komputer z tabletem graficznym i iPad z Apple Pencilem. Telefon pozostaje poza zakresem. Responsywność, gesty i brak zasłaniania treści na iPadzie są bramką wydania.</p>
+      </article>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Poziom</th><th>Obciążenie</th><th>Znaczenie</th></tr></thead>
+        <tbody>
+          <tr><td>Limit operacyjny</td><td>20 Teachers</td><td>Kontrolowany zakres realnego Pilota. To nie jest twarda blokada w architekturze.</td></tr>
+          <tr><td>Brama pojemności</td><td>22 Teachers + 35 Students = 57 klientów</td><td>Wynik wymagany przed wydaniem. Przekracza spodziewaną równoczesność.</td></tr>
+          <tr><td>Stress test</td><td>22 Teachers + 66 Students = 88 klientów</td><td>Pomiar zapasu i zachowania przy przeciążeniu. Nie uzasadnia komplikowania architektury, jeśli 57 klientów działa stabilnie.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Granica bezpieczeństwa.</strong> Pilot świadomie akceptuje niski koszt pełnej utraty danych i nie wymaga backupu. Nie akceptuje utraty potwierdzonych zmian podczas zwykłej lekcji, przecieku między tablicami ani działania bez właściwego linku.
+    </div>
+  </section>
+
+  <section id="blokery" class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Ręczne QA w Browserze</p>
+      <h2>Potwierdzone blokery i błędy wysokiego ryzyka</h2>
+      <p class="lead">Te punkty zostały odtworzone na działającym lokalnie snapshotcie z PostgreSQL i kilkoma kartami przeglądarki.</p>
+    </div>
+    <div class="finding-list">
+      <article class="finding">
+        <span class="status p0">P0</span>
+        <div><h3>Obcy użytkownik może odczytać i zmienić zwykły pokój</h3><p>Publiczna lista ujawnia aktywne ID i liczbę osób. Wpisanie samego ID ładuje całą tablicę. Klucz z adresu nie bierze udziału w transporcie.</p><p class="evidence">Dowód: <span class="code">server/src/httpApp.ts:170-180</span>, <span class="code">server/src/server.ts:279-299</span>, <span class="code">frontend/src/services/connectToYjs.ts:17-80</span>.</p></div>
+      </article>
+      <article class="finding">
+        <span class="status p0">P0</span>
+        <div><h3>Uczeń może trwale edytować zarchiwizowaną tablicę</h3><p>Zaproszenie pokazuje tryb tylko do odczytu. Po otwarciu dostępny jest pełny edytor, a zapis przechodzi przez WebSocket i pozostaje po przeładowaniu.</p><p class="evidence">Dowód: <span class="code">frontend/src/views/StudentBoardEntry.vue:99-107</span>, <span class="code">server/src/server.ts:292-316</span>.</p></div>
+      </article>
+      <article class="finding">
+        <span class="status p1">P1</span>
+        <div><h3>Panel administratora nie umie uwierzytelnić się do API</h3><p>Backend odpowiada 401. UI pokazuje pustą listę, czyści formularz i nie wyświetla poprawnego błędu.</p><p class="evidence">Dowód: <span class="code">frontend/src/views/AdminTeachersPanel.vue:150-229</span>.</p></div>
+      </article>
+      <article class="finding">
+        <span class="status p1">P1</span>
+        <div><h3>Po utworzeniu tablicy pole zaproszenia jest puste</h3><p>Frontend czyta <span class="code">studentLink</span>, a backend zwraca <span class="code">studentUrl</span>. Sama tablica powstaje poprawnie.</p><p class="evidence">Dowód: <span class="code">frontend/src/views/TeacherDashboard.vue:121-129</span>, <span class="code">server/src/routes/teacherBoards.ts:48</span>.</p></div>
+      </article>
+      <article class="finding">
+        <span class="status p1">P1</span>
+        <div><h3>Kod pokazuje skrócony alias zamiast pełnej nazwy publicznej</h3><p>Wspólny alias jest świadomą regułą biznesową, ale jego dokładna wartość to <span class="code">Dawid Furmaniuk - Matsin</span>. Obecny kod zwraca tylko <span class="code">Dawid Furmaniuk</span>.</p><p class="evidence">Dowód: <span class="code">server/src/routes/boardAccess.ts:5-6,22-23,45-46</span>. Kontrakt: <span class="code">CONTEXT.md</span> i ADR-0009.</p></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="architektura" class="stack-lg" style="margin-top:34px">
+    <div class="card section stack">
+      <p class="kicker">9 kandydatów architektury</p>
+      <h2>Gdzie projekt potrzebuje głębszych modułów</h2>
+      <p class="lead">To nie jest lista refactorów do automatycznego wdrożenia. Każda karta pokazuje problem, kierunek i pytanie, które musi poprzedzić projekt interfejsu.</p>
+    </div>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status strong">mocna rekomendacja</span><h2>1. Współpraca i trwały stan tablicy</h2></div>
+      <p>Jeden proces utrzymuje żywy <span class="code">Y.Doc</span>, połączenia i timery. Log przyrostowy jest zapisywany, lecz odtwarzanie czyta tylko snapshot. Kompakcja usuwa wszystkie przyrosty bez atomowego punktu odcięcia.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node bad">proces A<br>Y.Doc</span><span class="arrow">→</span><span class="node">jeden snapshot</span><span class="arrow">←</span><span class="node bad">proces B<br>Y.Doc</span><span class="node bad">log, którego recovery nie czyta</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">interfejs współpracy</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">adapter lokalny</span><span class="node good-node">adapter rozproszony</span></div><span class="arrow">↓</span><span class="node">uporządkowany zapis i bezpieczna kompakcja</span></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Jedno miejsce dla kolejności zapisu, recovery, fan-outu, shutdownu i własności dokumentu.</p></div>
+        <div><h4>Dowody</h4><p class="code">boardYjsPersistence.ts:52-167<br>server.ts:193-365<br>rooms.ts:89-251</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Pilot działa na jednej instancji. Klient bez sieci przechodzi do odczytu. Interfejs współpracy ma pozostawić miejsce na późniejszy adapter rozproszony.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status strong">mocna rekomendacja</span><h2>2. Autoryzacja tablic i tenantów</h2></div>
+      <p>Transport HTTP, WebSocket, AI i frontend interpretują uprawnienia osobno. Brakuje jednej decyzji wiążącej użytkownika, tenant, tablicę, rolę, termin, archiwum i rodzaj operacji.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node bad">HTTP<br>część zasad</span><span class="node bad">WebSocket<br>część zasad</span><span class="node bad">AI<br>część zasad</span><span class="node bad">UI<br>etykieta readOnly</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node">żądanie operacji</span><span class="arrow">↓</span><span class="node deep">moduł decyzji uprawnień</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">zezwól i audytuj</span><span class="node bad">odrzuć</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Jednakową odpowiedź dla każdej ścieżki zapisu i wyraźną izolację tenantów.</p></div>
+        <div><h4>Dowody</h4><p class="code">boardStudentAuth.ts:37-94<br>boardTokens.ts:5-38<br>server.ts:279-316</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Jedna reguła serwera rozstrzyga rolę, aktywny link, tablicę i operację. Wygaśnięcie blokuje dostęp od razu i uruchamia siedmiodniowe usunięcie.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status strong">mocna rekomendacja</span><h2>3. Kanoniczny model dokumentu tablicy</h2></div>
+      <p>Ten sam obiekt ma różne reprezentacje w rysowaniu, renderowaniu, Yjs, serializacji, backendzie i narzędziach AI. Aliasy pól pokazują, że zmiana schematu może działać w jednym miejscu i zniknąć w innym.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node bad">drawing engine</span><span class="node bad">Y.Map</span><span class="node bad">serializer</span><span class="node bad">AI schema</span><span class="node bad">renderer</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">kanoniczny dokument</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">Yjs adapter</span><span class="node good-node">AI adapter</span><span class="node good-node">render adapter</span><span class="node good-node">export adapter</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Walidację, migracje i testy właściwości w jednym miejscu.</p></div>
+        <div><h4>Dowody</h4><p class="code">useDrawingEngine.js<br>serializer.js<br>boardDoc.ts<br>boardSnapshot.ts</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Pilot wymaga importu i eksportu PDF, ale nie migracji starych eksperymentalnych snapshotów. Surowy format tablicy zostaje narzędziem developerskim.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status worth">warto zbadać</span><h2>4. Orkiestracja interakcji whiteboardu</h2></div>
+      <p><span class="code">WhiteboardCanvas.vue</span> ma 2786 linii i około 80 publicznych wpisów stanu lub zachowania. Wydzielone composables skróciły plik, lecz nadal wymagają znajomości szerokiego zestawu refów, callbacków i kolejności inicjalizacji.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow"><span class="node bad">WhiteboardCanvas<br>szeroki interfejs</span><span class="arrow">↓</span><div class="flow row"><span class="node">drawing</span><span class="node">selection</span><span class="node">PDF</span><span class="node">bindings</span><span class="node">render</span></div></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">sesja whiteboardu</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">tryb interakcji</span><span class="node good-node">viewport</span><span class="node good-node">transformacje</span><span class="node good-node">mutacje dokumentu</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Mniejszy interfejs i testy zachowania niezależne od rozmieszczenia funkcji.</p></div>
+        <div><h4>Ryzyko</h4><p>Łatwo stworzyć cienkie moduły, które tylko przekazują dziesiątki argumentów.</p></div>
+        <div><h4>Kierunek implementacji</h4><p>Wydzielać tylko spójne zachowania potwierdzone testami: mutacje dokumentu, viewport, tryb wejścia i zaznaczenie. Nie tworzyć cienkich wrapperów nad istniejącym monolitem.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status worth">warto zbadać</span><h2>5. Cykl mutacji tablicy przez AI</h2></div>
+      <p>AI czyta snapshot, podczas gdy ludzie mogą dalej edytować dokument, a następnie zapisuje patch bez jawnej polityki konfliktu, idempotencji i budżetu mutacji.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node">snapshot</span><span class="arrow">→</span><span class="node bad">model AI</span><span class="arrow">→</span><span class="node bad">bezpośredni patch Y.Doc</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node">intencja użytkownika</span><span class="arrow">↓</span><span class="node deep">moduł mutacji AI</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">autoryzacja</span><span class="node good-node">walidacja</span><span class="node good-node">kontrola konfliktu</span><span class="node good-node">audyt</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Kontrolowany koszt, przewidywalne konflikty i możliwość powtórzenia operacji.</p></div>
+        <div><h4>Dowody</h4><p class="code">aiBoardAssistant.ts:35-81<br>boardAgent.ts<br>boardTools.ts</p></div>
+        <div><h4>Ustalony kierunek</h4><p>AI jest poza Pilotem i najbliższymi iteracjami. UI i backend mają je wyłączyć. Ten moduł nie blokuje naprawy współpracy.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status worth">warto zbadać</span><h2>6. Limity i obserwowalność środowiska</h2></div>
+      <p>Liczniki połączeń, rate limit, liczba pokoi, cleanup i health są lokalne dla procesu. Po dodaniu kolejnych instancji limity się mnożą, a każdy proces widzi tylko fragment ruchu.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node bad">proces A<br>własne liczniki</span><span class="node bad">proces B<br>własne liczniki</span><span class="node">lokalny health</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">sterowanie środowiskiem</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">globalne limity</span><span class="node good-node">lease dla jobów</span><span class="node good-node">metryki</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Jedną prawdę o limitach tenantów, zadaniach okresowych i gotowości systemu.</p></div>
+        <div><h4>Ryzyko</h4><p>Nie każdy licznik musi być globalny. Tania telemetria per socket powinna zostać lokalna.</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Najpierw jedna instancja i brama 57 klientów. Wiele procesów wchodzi dopiero po pomiarach kosztu i obciążenia z Pilota.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status strong">mocna rekomendacja</span><h2>7. Rodzaj pokoju i model zaufania</h2></div>
+      <p>Anonimowy pokój peer i firmowa tablica ucznia korzystają z tej samej ścieżki WebSocket, choć potrzebują innych zasad retencji, autoryzacji i trwałości. Typ pokoju jest odgadywany przez lookup bazy.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow"><span class="node">jeden WebSocket</span><span class="arrow">↓</span><span class="node bad">lookup DB lub kształt ID</span><span class="arrow">↓</span><div class="flow row"><span class="node">peer trust</span><span class="node">enterprise trust</span></div></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">jawny rodzaj pokoju</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">peer adapter i polityka</span><span class="node good-node">tenant adapter i polityka</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Brak fail-open z tablicy firmowej do anonimowego pokoju przy awarii bazy.</p></div>
+        <div><h4>Dowody</h4><p class="code">rooms.ts:169-251<br>persistence.ts:30-47<br>connectToYjs.ts:17-80</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Peer rooms są techniczną pozostałością. Pilot je ukrywa i wyłącza. Oddzielna ścieżka developerska może zostać tylko do czasu zastąpienia jej testami Managed Boards.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status worth">warto zbadać</span><h2>8. Admission control, backpressure i limity tablicy</h2></div>
+      <p>Serwer liczy wiadomości, nie koszt pracy. Jedna wiadomość może mieć 5 MB. Każda zaakceptowana zmiana trafia do Yjs, broadcastu i asynchronicznego zapisu. Kod nie sprawdza <span class="code">bufferedAmount</span> wolnych klientów.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node">licznik wiadomości</span><span class="arrow">→</span><span class="node bad">broadcast do N klientów</span><span class="arrow">→</span><span class="node bad">nieograniczone bufory</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">admission control</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">koszt operacji</span><span class="node good-node">quota tenanta</span><span class="node good-node">polityka wolnego klienta</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Kontrolę nad pamięcią, opóźnieniem i kosztami dużych tablic.</p></div>
+        <div><h4>Ryzyko</h4><p>Bez pomiarów można dodać skomplikowane limity, których projekt nie potrzebuje.</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Generous limity chronią normalną lekcję. Brama wynosi 57 klientów, a 88 to stress test. Limity dokumentu i uploadu ustalamy po pomiarze reprezentatywnych PDF-ów i tablic.</p></div>
+      </div>
+    </article>
+
+    <article class="card candidate">
+      <div class="candidate-title"><span class="status worth">warto zbadać</span><h2>9. Start, readiness i shutdown</h2></div>
+      <p>Inicjalizacja rozpoczyna pracę w tle, serwer zaczyna słuchać przed potwierdzeniem zależności, health raportuje lokalną liczbę pokoi, a shutdown nie czeka na snapshoty i zamknięcie bazy.</p>
+      <div class="diagrams">
+        <div class="diagram"><h4>Teraz</h4><div class="flow row"><span class="node bad">init w tle</span><span class="node bad">listen od razu</span><span class="node bad">lokalny health</span><span class="node bad">zamknij sockety i wyjdź</span></div></div>
+        <div class="diagram"><h4>Kierunek</h4><div class="flow"><span class="node deep">cykl życia procesu</span><span class="arrow">↓</span><div class="flow row"><span class="node good-node">migracja</span><span class="node good-node">readiness</span><span class="node good-node">drain</span><span class="node good-node">flush i close</span></div></div></div>
+      </div>
+      <div class="candidate-meta">
+        <div><h4>Co zyskujemy</h4><p>Przewidywalny deployment, uczciwy healthcheck i mniejsze ryzyko utraty końcowych zmian.</p></div>
+        <div><h4>Dowody</h4><p class="code">persistence.ts:17-28<br>server.ts:348-365<br>Dockerfile:28-32</p></div>
+        <div><h4>Ustalony kierunek</h4><p>Jedna instancja Railway ma przechodzić readiness, drenować połączenia, zapisywać dokumenty i pozwalać na rollback do poprzedniej rewizji. Wdrożenia planujemy poza lekcjami.</p></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Sekwencje awarii</p>
+      <h2>Trzy sytuacje, których obecny kod nie potrafi zagwarantować</h2>
+    </div>
+    <div class="grid grid-3">
+      <article class="stack">
+        <h3>Zmiana znika po restarcie</h3>
+        <ol class="sequence small muted"><li>Serwer zapisuje increment.</li><li>Timer snapshotu jeszcze nie działa.</li><li>Proces kończy pracę bez flushu.</li><li>Restart odczytuje tylko stary snapshot.</li></ol>
+      </article>
+      <article class="stack">
+        <h3>Edycja offline znika po reconnect</h3>
+        <ol class="sequence small muted"><li>Socket zostaje przerwany.</li><li>Klient zmienia lokalny dokument.</li><li>Handler nie wysyła bez stanu OPEN.</li><li>Reconnect wysyła tylko awareness.</li></ol>
+      </article>
+      <article class="stack">
+        <h3>Kompakcja kasuje nowszą zmianę</h3>
+        <ol class="sequence small muted"><li>Proces A koduje stan.</li><li>Proces B dopisuje zmianę.</li><li>A zapisuje starszy snapshot.</li><li>A usuwa wszystkie incrementy.</li></ol>
+      </article>
+    </div>
+  </section>
+
+  <section id="review" class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Review agenta</p>
+      <h2>Defekty wprowadzone przez badany diff</h2>
+      <p class="lead">Ta sekcja nie miesza starych problemów architektury z regresjami zmiany od merge-base <span class="code">10e7298</span> do snapshotu <span class="code">1815758</span>.</p>
+    </div>
+    <div class="finding-list">
+      <article class="finding"><span class="status p1">P1</span><div><h3>Token nauczyciela z tablicy A pozwala zmienić tablicę B</h3><p>Endpoint AI sprawdza rolę tokenu, ale nie porównuje <span class="code">session.boardId</span> z <span class="code">boardId</span> w body. Test wykonawczy potwierdził odpowiedź 200 i pobranie obcej tablicy.</p><p class="evidence"><span class="code">server/src/routes/aiBoardAssistant.ts:30</span></p></div></article>
+      <article class="finding"><span class="status p1">P1</span><div><h3>Kompakcja może skasować increment nowszy od snapshotu</h3><p>Snapshot i usunięcie wszystkich incrementów nie są atomowe i nie używają cutoffu.</p><p class="evidence"><span class="code">server/src/services/boardYjsPersistence.ts:152</span></p></div></article>
+      <article class="finding"><span class="status p1">P1</span><div><h3>Domyślny Docker Compose nie uruchamia backendu</h3><p>Tryb produkcyjny wymaga sekretów i <span class="code">DATABASE_URL</span>, których konfiguracja Compose nie przekazuje.</p><p class="evidence"><span class="code">server/src/config.ts:59-71</span></p></div></article>
+      <article class="finding"><span class="status p2">P2</span><div><h3>Uczeń omija blokadę AI chat przez pominięcie nagłówka</h3><p>Kontrola roli działa tylko, gdy klient sam dołączy <span class="code">X-Board-Token</span>.</p><p class="evidence"><span class="code">server/src/httpApp.ts:281-291</span></p></div></article>
+      <article class="finding"><span class="status p2">P2</span><div><h3>Limit WebSocket ufa dowolnemu X-Forwarded-For</h3><p>Klient może rotować pierwszy adres nagłówka, jeśli infrastruktura nie narzuca zaufanego proxy.</p><p class="evidence"><span class="code">server/src/server.ts:155-160</span></p></div></article>
+      <article class="finding"><span class="status p2">P2</span><div><h3>Error i close dwukrotnie zwalniają slot połączenia</h3><p>Jedno połączenie może obniżyć licznik dwa razy i osłabić limit IP.</p><p class="evidence"><span class="code">server/src/server.ts:323-326</span></p></div></article>
+      <article class="finding"><span class="status p2">P2</span><div><h3>Nowe testy autoryzacji nie dochodzą do autoryzacji</h3><p>Domyślne wyłączenie AI zwraca 503 przed sprawdzeniem tokenu. Trzy oczekiwania 401, 401 i 403 są czerwone.</p><p class="evidence"><span class="code">server/tests/security.test.ts:70</span></p></div></article>
+    </div>
+  </section>
+
+  <section id="qa" class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Pełne QA funkcjonalne i wizualne</p>
+      <h2>Co działa oraz co przeszkadza użytkownikowi</h2>
+    </div>
+    <div class="grid grid-2 qa-grid">
+      <article><span class="status good">działa</span><h3 style="margin-top:12px">Rdzeń whiteboardu</h3><p class="small muted">Pen, tekst, gumka, zaznaczanie, przesuwanie, resize, undo, redo, zoom, zapis po reloadzie, wszystkie dostępne figury 2D i 3D.</p></article>
+      <article><span class="status good">działa</span><h3 style="margin-top:12px">Współpraca w jednym procesie</h3><p class="small muted">Dwie i trzy karty synchronizowały rysunki oraz kursory w czasie rzeczywistym. Lobby pokazywało poprawną liczbę osób.</p></article>
+      <article><span class="status p1">P1</span><h3 style="margin-top:12px">Dashboard nauczyciela jest ucięty na mobile</h3><p class="small muted">Przy szerokości 390 px filtr i akcje tabeli wychodzą poza viewport bez dostępnej drogi przewinięcia.</p></article>
+      <article><span class="status p1">P1</span><h3 style="margin-top:12px">Toolbar i Shapes nie mieszczą się na 1280×720</h3><p class="small muted">Pierwsze i ostatnie narzędzia są ucięte. Popover figur wychodzi do około y=893 przy wysokości 720 px.</p></article>
+      <article><span class="status p2">P2</span><h3 style="margin-top:12px">Badge pokazuje stale 0 Online</h3><p class="small muted">Awareness działa w canvasie, ale stan nie trafia do licznika w <span class="code">App.vue</span>.</p></article>
+      <article><span class="status discuss">poza Pilotem</span><h3 style="margin-top:12px">Chemia wstawia surowy LaTeX jako tekst</h3><p class="small muted">Wynik pH jest poprawny, lecz użytkownik widzi polecenia <span class="code">\quad</span> i <span class="code">\text</span>. Chemistry zostaje ukryte, więc ten defekt nie blokuje Pilota.</p></article>
+      <article><span class="status discuss">znika z produkcji</span><h3 style="margin-top:12px">Panele narzędzi nachodzą na panel AI</h3><p class="small muted">Math, physics, diagram i chemistry zamykają się wzajemnie, ale AI pozostaje w tym samym obszarze. Pilot ukrywa AI i Chemistry. Widoczne panele nadal muszą przejść pełny test nakładania i skalowania.</p></article>
+      <article><span class="status discuss">do potwierdzenia</span><h3 style="margin-top:12px">Settings nie pojawia się po hover w built-in Browserze</h3><p class="small muted">Na emulowanym touch gear działał. Problem może dotyczyć pointer-events albo zgodności z przeglądarką testową. Wymaga sprawdzenia na realnym desktopie.</p></article>
+    </div>
+  </section>
+
+  <section id="testy" class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Dowody i luki</p>
+      <h2>Testy, buildy i zależności</h2>
+    </div>
+    <div class="grid grid-2">
+      <div class="stack">
+        <h3>Stan bieżący</h3>
+        <ul class="small muted">
+          <li>Build frontendu i backendu przechodzi.</li>
+          <li>Frontend ma 76/76 zielonych testów.</li>
+          <li>Backend ma 16/19 zielonych testów.</li>
+          <li>Dwa bardziej behawioralne pliki <span class="code">*.spec.js</span> są wykluczone przez wzorzec <span class="code">*.test.js/ts</span>.</li>
+          <li>Nie znaleziono konfiguracji CI.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <h3>Brakujące testy wykonywalne</h3>
+        <ul class="small muted">
+          <li>Restart między incrementem a snapshotem bez utraty potwierdzonej zmiany.</li>
+          <li>Przejście do read-only po utracie sieci i powrót po pełnej synchronizacji.</li>
+          <li>Odrzucenie każdej mutacji po wygaśnięciu lub zakończeniu Board Access.</li>
+          <li>Token tablicy A odrzucony dla tablicy B.</li>
+          <li>Trzygodzinna brama 57 klientów i osobny stress test 88 klientów.</li>
+          <li>Backpressure dla dużych dokumentów, PDF-ów i wolnych klientów.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Obszar</th><th>Wynik</th><th>Jak to czytać</th></tr></thead>
+        <tbody>
+          <tr><td>Frontend tests</td><td>76/76</td><td>Wynik dobry, ale 116 asercji w dużych audit suites sprawdza tekst źródłowy, nie zachowanie.</td></tr>
+          <tr><td>Backend tests</td><td>16/19</td><td>Trzy testy auth kończą się 503 przed dojściem do kontroli tokenu.</td></tr>
+          <tr><td>Server dependency audit</td><td>8 alertów</td><td>5 high, 3 moderate. Potrzebna analiza osiągalności, nie automatyczny upgrade wszystkiego.</td></tr>
+          <tr><td>Frontend dependency audit</td><td>12 alertów</td><td>3 critical, 6 high, 3 moderate. Sygnał rejestru z dnia audytu.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="kolejnosc" class="card section stack-lg">
+    <div class="stack">
+      <p class="kicker">Tok pracy po zamknięciu decyzji</p>
+      <h2>Najpierw integralność lekcji, potem pełna jakość narzędzi</h2>
+    </div>
+    <div class="priority">
+      <article><div class="num">0</div><div><h3>Kontrakt produktu jest zamknięty</h3><p class="small muted" style="margin-top:7px"><span class="code">CONTEXT.md</span>, ADR-y, specyfikacja Pilota i bramka wydania zapisują model linków, role, retencję, urządzenia oraz świadomie odłożone funkcje.</p></div></article>
+      <article><div class="num">1</div><div><h3>Naprawić autoryzację i trwałość</h3><p class="small muted" style="margin-top:7px">Jedna decyzja uprawnień dla HTTP i WebSocket, brak fail-open, poprawne recovery wszystkich aktualizacji, flush przy shutdownie i prawdziwy readiness.</p></div></article>
+      <article><div class="num">2</div><div><h3>Dopracować wszystkie widoczne narzędzia</h3><p class="small muted" style="margin-top:7px">Nie wystarczy działający przycisk. Każde narzędzie przechodzi zaznaczanie, transformacje, undo, współpracę, reload i zapis.</p></div></article>
+      <article><div class="num">3</div><div><h3>Domknąć input i iPada</h3><p class="small muted" style="margin-top:7px">Płynne pióro, profile Mysz i Pióro, poprawne gesty, brak ucięć, nakładania paneli i martwych kontrolek.</p></div></article>
+      <article><div class="num">4</div><div><h3>Zbudować wykonywalne bramki</h3><p class="small muted" style="margin-top:7px">Krótki test zmian, dojrzała tablica, trzygodzinne 57 klientów, opcjonalne 88 klientów i pełny manualny przebieg w Browserze.</p></div></article>
+      <article><div class="num">5</div><div><h3>Uruchomić Pilot i mierzyć</h3><p class="small muted" style="margin-top:7px">Najpierw stabilna jedna instancja Railway. Skalowanie poziome, backup, E2E i AI wracają do rozmowy dopiero po realnych danych lub przed Company Rollout.</p></div></article>
+    </div>
+  </section>
+
+  <section class="card section stack">
+    <p class="kicker">Świadome ograniczenia</p>
+    <h2>Czego agent nie powinien "naprawiać" po swojemu</h2>
+    <details open><summary>Brak kont i link działający na wielu urządzeniach</summary><p>To celowy model dostępu. Nie dodajemy fingerprintingu, przypisywania linku do przeglądarki ani blokady równoczesnych sesji.</p></details>
+    <details><summary>Jedna instancja w Pilocie</summary><p>Nie budujemy jeszcze koordynacji wielu procesów. Kod ma mieć czystą granicę przyszłego adaptera, ale działać stabilnie na jednej instancji Railway.</p></details>
+    <details><summary>Read-only bez sieci</summary><p>Nie próbujemy teraz synchronizować edycji offline. Brak potwierdzonego połączenia blokuje mutacje do czasu pełnej synchronizacji.</p></details>
+    <details><summary>Stała publiczna tożsamość Teachera</summary><p><span class="code">Dawid Furmaniuk - Matsin</span> jest świadomą nazwą widoczną dla każdego Studenta. Prawdziwe dane Teachera pozostają wewnętrzne.</p></details>
+    <details><summary>AI, E2E i peer rooms poza zakresem</summary><p>Te kierunki mogą wrócić w przyszłości. Pilot ich nie pokazuje, nie deklaruje i nie uwzględnia w bieżącej architekturze.</p></details>
+  </section>
+
+  <footer>
+    Raport łączy audyt architektury, review diffu, ręczne QA i uzgodniony kontrakt Pilota. Zmienia dokumentację, nie kod produktu. Nietypowe decyzje są opisane wprost, żeby kolejny agent nie potraktował ich jako przypadkowych błędów.
+  </footer>
+</main>
+</body>
+</html>

@@ -1,27 +1,37 @@
 // HandwritingStylerModule.js
 // Provides lightweight grouping and geometric normalization for handwriting strokes
 
+// 7.6: Return null for invalid points instead of {x:0,y:0} to avoid corrupting strokes
 const normalizePoint = (point) => {
-  if (!point) return { x: 0, y: 0, pressure: 0, t: 0 };
+  if (!point) return null;
   if (Array.isArray(point)) {
+    const x = point[0];
+    const y = point[1];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return {
-      x: point[0] || 0,
-      y: point[1] || 0,
+      x,
+      y,
       pressure: point[2] ?? 0,
       t: point[3] ?? 0
     };
   }
+  const x = Number(point.x);
+  const y = Number(point.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return {
-    x: Number(point.x) || 0,
-    y: Number(point.y) || 0,
+    x,
+    y,
     pressure: point.pressure ?? point.p ?? 0,
     t: point.t ?? 0
   };
 };
 
+// Filter out null points from normalizePoint
 const cloneStroke = (stroke) => ({
   ...stroke,
-  points: Array.isArray(stroke?.points) ? stroke.points.map((p) => ({ ...normalizePoint(p) })) : []
+  points: Array.isArray(stroke?.points)
+    ? stroke.points.map(normalizePoint).filter(Boolean)
+    : []
 });
 
 export default class HandwritingStylerModule {

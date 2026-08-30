@@ -12,9 +12,10 @@
       <!-- Tools Group -->
       <div class="tool-group" :class="{ vertical: orientation === 'vertical' }">
         <button
-          v-for="tool in mainTools"
+          v-for="tool in visibleMainTools"
           :key="tool.name"
           class="tool-btn"
+          :data-tool-id="tool.feature"
           :class="{ active: currentTool === tool.name }"
           @click="selectTool(tool.name)"
           :title="tool.label"
@@ -27,14 +28,15 @@
 
       <!-- Shapes Group -->
       <div class="tool-group" :class="{ vertical: orientation === 'vertical' }">
-        <div class="dropdown-trigger" ref="dropdownTriggerRef">
+        <div class="dropdown-trigger" ref="dropdownTriggerRef" v-if="can('tool.shapes')">
           <button
             type="button"
             class="tool-btn"
+            data-tool-id="tool.shapes"
             ref="shapesTriggerRef"
             :class="{ active: isShapeTool(currentTool) }"
             @click.stop="toggleShapesMenu"
-            title="Shapes"
+            title="Kształty"
           >
             <component :is="currentShapeIcon" :size="20" />
             <ChevronDown :size="12" class="dropdown-arrow" />
@@ -153,13 +155,13 @@
 
       <!-- Actions Group -->
       <div class="tool-group" :class="{ vertical: orientation === 'vertical' }">
-        <button class="tool-btn" @click="$emit('undo')" title="Undo (Ctrl+Z)">
+        <button v-if="can('tool.undo')" class="tool-btn" data-tool-id="tool.undo" @click="$emit('undo')" title="Cofnij (Ctrl+Z)">
           <Undo2 :size="20" />
         </button>
-        <button class="tool-btn" @click="$emit('redo')" title="Redo (Ctrl+Y)">
+        <button v-if="can('tool.redo')" class="tool-btn" data-tool-id="tool.redo" @click="$emit('redo')" title="Ponów (Ctrl+Y)">
           <Redo2 :size="20" />
         </button>
-        <button class="tool-btn danger" @click="$emit('clear')" title="Clear Canvas">
+        <button v-if="can('tool.clearBoard')" class="tool-btn danger" data-tool-id="tool.clearBoard" @click="$emit('clear')" title="Wyczyść tablicę">
           <Trash2 :size="20" />
         </button>
       </div>
@@ -168,43 +170,63 @@
 
       <!-- Features Group -->
       <div class="tool-group" :class="{ vertical: orientation === 'vertical' }">
+        <!-- Rendered in PilotAvailability manifest order (VVE-100): the UI
+             enumeration test asserts this group equals manifest.tools. -->
         <button
+          v-if="can('panel.calculator')"
           class="tool-btn"
+          data-tool-id="panel.calculator"
+          @click="$emit('toggle-calculator')"
+          title="Kalkulator naukowy"
+        >
+          <Calculator :size="20" />
+        </button>
+        <button
+          v-if="can('panel.mathGraph')"
+          class="tool-btn"
+          data-tool-id="panel.mathGraph"
           :class="{ active: isMathPanelOpen }"
           @click="$emit('toggle-math-panel')"
-          title="Math Function Panel"
+          title="Wykres funkcji"
         >
           <LineChart :size="20" />
         </button>
         <button
+          v-if="can('panel.physicsGraph')"
           class="tool-btn"
+          data-tool-id="panel.physicsGraph"
           :class="{ active: isPhysicsPanelOpen }"
           @click="$emit('toggle-physics-panel')"
-          title="Physics Plot Panel"
+          title="Wykres fizyczny"
         >
           <Activity :size="20" />
         </button>
         <button
+          v-if="can('experiment.ai')"
           class="tool-btn"
+          data-tool-id="experiment.ai"
           :class="{ active: isDiagramPanelOpen }"
           @click="$emit('toggle-diagram-panel')"
-          title="AI Diagram Panel"
+          title="Diagram (AI)"
         >
           <GitBranch :size="20" />
         </button>
         <button
+          v-if="can('experiment.chemistry')"
           class="tool-btn"
-          @click="$emit('toggle-calculator')"
-          title="Scientific Calculator"
+          data-tool-id="experiment.chemistry"
+          @click="$emit('toggle-chemistry-panel')"
+          title="Chemia (pH)"
         >
-          <Calculator :size="20" />
+          <FlaskConical :size="20" />
         </button>
-        <div class="dropdown-trigger coordinate-trigger" ref="coordinateTriggerRef">
-          <button 
-            class="tool-btn" 
+        <div v-if="can('panel.coordinateSystem')" class="dropdown-trigger coordinate-trigger" ref="coordinateTriggerRef">
+          <button
+            class="tool-btn"
+            data-tool-id="panel.coordinateSystem"
             :class="{ active: showCoordinateMenu }"
             @click.stop="toggleCoordinateMenu"
-            title="Add Coordinate System"
+            title="Dodaj układ współrzędnych"
           >
             <Axis3d :size="20" />
             <ChevronDown :size="12" class="dropdown-arrow" />
@@ -229,11 +251,11 @@
         </div>
       </div>
       
-      <div class="divider" :class="{ horizontal: orientation === 'vertical' }"></div>
+      <div class="divider" v-if="can('dev.debugControls')" :class="{ horizontal: orientation === 'vertical' }"></div>
 
       <!-- Settings Group -->
-      <div class="tool-group" :class="{ vertical: orientation === 'vertical' }">
-          <button class="tool-btn" @click="$emit('toggle-debug')" title="Debug Info">
+      <div v-if="can('dev.debugControls')" class="tool-group" :class="{ vertical: orientation === 'vertical' }">
+          <button class="tool-btn" data-tool-id="dev.debugControls" @click="$emit('toggle-debug')" title="Debug Info">
             <Bug :size="20" />
           </button>
       </div>
@@ -247,20 +269,30 @@
       @pointerenter="handleHoverEnter"
       @pointerleave="handleHoverLeave"
     >
-      <!-- Color Picker -->
-      <div class="property-group">
-        <div 
-          class="color-preview" 
+      <!-- Color Picker + Quick Swatches -->
+      <div class="property-group color-group">
+        <div
+          class="color-preview"
           :style="{ backgroundColor: currentColor }"
           @click="toggleColorPicker"
         ></div>
-        <input 
-          type="color" 
-          ref="colorInput" 
-          v-model="currentColor" 
+        <input
+          type="color"
+          ref="colorInput"
+          v-model="currentColor"
           @input="updateColor"
           class="hidden-color-input"
         >
+        <div class="quick-swatches">
+          <button
+            v-for="swatch in quickSwatches"
+            :key="swatch"
+            class="quick-swatch"
+            :style="{ backgroundColor: swatch }"
+            :class="{ active: currentColor === swatch }"
+            @click="selectColorSwatch(swatch)"
+          ></button>
+        </div>
       </div>
 
       <!-- Line Width Slider -->
@@ -295,11 +327,13 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { featureAvailable } from '../services/pilotSurface';
 import {
   Pencil,
   Eraser,
   Type,
   MousePointer2,
+  Hand,
   Square,
   Circle as CircleIcon,
   Triangle,
@@ -321,13 +355,15 @@ import {
   Cylinder,
   Cone,
   Pyramid,
-  Globe
+  Globe,
+  FlaskConical
 } from 'lucide-vue-next';
 
 const props = defineProps({
   activeTool: { type: String, default: 'pen' },
+  role: { type: String, default: 'developer' },
   color: { type: String, default: '#000000' },
-  fillColor: { type: String, default: null },
+  fillColor: { type: null, default: null },
   lineWidth: { type: Number, default: 2 },
   lineStyle: { type: String, default: 'solid' },
   arrowStyle: { type: String, default: 'none' },
@@ -357,15 +393,23 @@ const emit = defineEmits([
   'toggle-diagram-panel',
   'add-coordinate-system',
   'toggle-calculator',
+  'toggle-chemistry-panel',
   'toggle-debug'
 ]);
 
+// Tool visibility is decided by the shared PilotAvailability manifest
+// (VVE-100): the rendered buttons are exactly the manifest's visible tools
+// for the current role and environment.
+const can = (featureId) => featureAvailable(featureId, props.role);
+
 const mainTools = [
-  { name: 'select', label: 'Select (V)', icon: MousePointer2 },
-  { name: 'pen', label: 'Pen (P)', icon: Pencil },
-  { name: 'text', label: 'Text (T)', icon: Type },
-  { name: 'eraser', label: 'Eraser (E)', icon: Eraser }
+  { name: 'select', label: 'Zaznaczanie (V)', icon: MousePointer2, feature: 'tool.select' },
+  { name: 'pan', label: 'Przesuwanie (H)', icon: Hand, feature: 'tool.pan' },
+  { name: 'pen', label: 'Pióro (P)', icon: Pencil, feature: 'tool.pen' },
+  { name: 'text', label: 'Tekst (T)', icon: Type, feature: 'tool.text' },
+  { name: 'eraser', label: 'Gumka (E)', icon: Eraser, feature: 'tool.eraser' }
 ];
+const visibleMainTools = computed(() => mainTools.filter((tool) => can(tool.feature)));
 
 const shapeOptions = [
   { tool: 'rectangle', label: 'Rectangle', icon: Square },
@@ -407,12 +451,20 @@ const arrowStyleOptions = [
 const colorSwatches = [
   '#000000',
   '#4b5563',
+  '#ffffff',
   '#2563eb',
+  '#3b82f6',
+  '#06b6d4',
+  '#14b8a6',
   '#16a34a',
+  '#84cc16',
   '#f59e0b',
+  '#f97316',
   '#dc2626',
+  '#ec4899',
   '#7c3aed',
-  '#14b8a6'
+  '#8b5cf6',
+  '#a855f7'
 ];
 
 const fillColorSwatches = [
@@ -424,6 +476,12 @@ const fillColorSwatches = [
   '#ccfbf1', // teal-100
   '#f3f4f6', // gray-100
   '#ffffff'  // white
+];
+
+// Quick color swatches shown inline in the properties bar (subset of full palette)
+const quickSwatches = [
+  '#000000', '#dc2626', '#2563eb', '#16a34a',
+  '#f59e0b', '#7c3aed', '#ec4899', '#ffffff'
 ];
 
 const coordinateOptions = [
@@ -440,6 +498,7 @@ const currentArrowStyle = ref(props.arrowStyle);
 const currentRoughness = ref(props.roughness);
 const currentEraserSize = ref(30);
 const propertiesVisible = ref(false);
+const isTouchDevice = ref(false);
 let hideTimer = null;
 
 const showShapesMenu = ref(false);
@@ -472,6 +531,7 @@ const shouldShowProperties = computed(() =>
 );
 
 const startHideTimer = () => {
+  if (isTouchDevice.value) return; // P0-FIX: Never auto-hide properties on touch devices
   clearTimeout(hideTimer);
   hideTimer = setTimeout(() => {
     propertiesVisible.value = false;
@@ -664,6 +724,11 @@ watch(() => props.orientation, () => {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
   window.addEventListener('resize', handleResize);
+  // P0-FIX: Detect touch device and keep properties bar always visible
+  isTouchDevice.value = window.matchMedia('(hover: none)').matches || navigator.maxTouchPoints > 0;
+  if (isTouchDevice.value) {
+    propertiesVisible.value = true;
+  }
 });
 
 onBeforeUnmount(() => {
@@ -937,6 +1002,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  position: relative;
 }
 
 .color-preview {
@@ -954,8 +1020,13 @@ onBeforeUnmount(() => {
 
 .hidden-color-input {
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  /* pointer-events enabled so iOS Safari can open the native picker on tap */
 }
 
 .slider-group {
@@ -991,6 +1062,37 @@ onBeforeUnmount(() => {
     font-size: 12px;
     color: var(--text-secondary);
     font-weight: 500;
+}
+
+/* Quick color swatches in properties bar */
+.color-group {
+  flex-wrap: wrap;
+}
+
+.quick-swatches {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.quick-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s;
+  padding: 0;
+}
+
+.quick-swatch:hover {
+  transform: scale(1.2);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.quick-swatch.active {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary);
 }
 </style>
 

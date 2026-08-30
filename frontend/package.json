@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run --config vite.config.js"
   },
   "dependencies": {
     "axios": "^1.13.2",
@@ -18,8 +19,8 @@
     "lucide-vue-next": "^0.554.0",
     "marked": "^17.0.0",
     "mathjs": "^14.4.0",
+    "pdfjs-dist": "^5.4.624",
     "perfect-freehand": "^1.2.2",
-    "plotly.js-dist-min": "^3.0.1",
     "roughjs": "^4.6.6",
     "tesseract.js": "^5.0.5",
     "uuid": "^11.1.0",
@@ -29,7 +30,11 @@
     "yjs": "^13.6.24"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@vitejs/plugin-vue": "^5.2.1",
-    "vite": "^6.2.0"
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20.8.3",
+    "vite": "^6.2.0",
+    "vitest": "^4.0.18"
   }
 }

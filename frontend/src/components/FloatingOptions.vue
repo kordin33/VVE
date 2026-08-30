@@ -172,7 +172,7 @@ const positionStyle = computed(() => ({
 <style scoped>
 .floating-options {
   position: absolute;
-  z-index: 1001;
+  z-index: var(--z-floating-options, 1001);
   background-color: var(--toolbar-bg, #ffffff);
   border: 1px solid var(--border-color, #e0e0e0);
   border-radius: 12px;
@@ -180,7 +180,9 @@ const positionStyle = computed(() => ({
   padding: 18px; /* Increased padding */
   display: flex;
   flex-direction: column;
-  min-width: 180px; /* Ensure a minimum width */
+  min-width: 180px;
+  /* 3.2: Responsive max-width to prevent viewport overflow */
+  max-width: min(400px, 95vw);
   /* max-width: 300px; /* Allow it to grow but not excessively - Removed for calculator */
   gap: 10px;
 }

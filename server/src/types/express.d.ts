@@ -1,12 +1,9 @@
-import type { TeacherRecord } from '../models/teacher';
-import type { BoardRecord } from '../models/board';
+import type { AccessGrant } from '../pilot/capabilityAccess';
 
 declare module 'express-serve-static-core' {
   interface Request {
-    teacher?: TeacherRecord;
-    board?: BoardRecord;
-    boardRole?: 'teacher' | 'student';
-    boardReadOnly?: boolean;
+    /** Scoped grant produced by the CapabilityAccess HTTP adapter for this request. */
+    capabilityGrant?: AccessGrant;
     correlationId?: string;
   }
 }

@@ -6,7 +6,7 @@
   >
     <div 
       class="panel-header" 
-      @mousedown="startDrag"
+      @pointerdown="startDrag"
     >
       <div class="header-content">
         <slot name="header"></slot>
@@ -57,8 +57,8 @@ const startDrag = (event) => {
     y: event.clientY - rect.top
   };
   
-  document.addEventListener('mousemove', handleDrag);
-  document.addEventListener('mouseup', stopDrag);
+  document.addEventListener('pointermove', handleDrag);
+  document.addEventListener('pointerup', stopDrag);
   event.preventDefault(); // Prevent text selection
 };
 
@@ -78,8 +78,8 @@ const handleDrag = (event) => {
 
 const stopDrag = () => {
   isDragging.value = false;
-  document.removeEventListener('mousemove', handleDrag);
-  document.removeEventListener('mouseup', stopDrag);
+  document.removeEventListener('pointermove', handleDrag);
+  document.removeEventListener('pointerup', stopDrag);
 };
 
 onUnmounted(() => {

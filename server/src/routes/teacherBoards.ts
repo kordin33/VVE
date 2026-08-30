@@ -1,6 +1,9 @@
 import { Router } from 'express';
-import { requireTeacherAuth } from '../middleware/requireTeacherAuth';
+import { logger } from '../logger';
+import type { CapabilityAccess } from '../pilot/capabilityAccess';
+import { requireTeacherCapability } from '../pilot/capabilityHttpAdapters';
 import { createBoardForTeacher, listBoardsForTeacher, updateBoard } from '../services/boardService';
+import { findTeacherById } from '../services/teacherService';
 import { createRateLimiter } from '../middleware/rateLimiter';
 
 const parseDate = (value: unknown): Date | null => {
@@ -10,33 +13,49 @@ const parseDate = (value: unknown): Date | null => {
   return new Date(ts);
 };
 
-export const createTeacherBoardsRouter = () => {
+/**
+ * Teacher dashboard board management. Every request is authorized through
+ * CapabilityAccess.decide('teacher.openDashboard'), which re-verifies the
+ * durable teacher active flag and credential version — a regenerated link or
+ * a deactivated teacher kills the session on the very next request.
+ */
+export const createTeacherBoardsRouter = (access: CapabilityAccess) => {
   const router = Router();
 
-  router.use(requireTeacherAuth);
+  router.use(requireTeacherCapability(access));
   router.use(
     createRateLimiter({
       windowMs: 60_000,
       max: 120,
-      keyResolver: (req) => req.teacher?.id || req.ip || 'unknown'
+      keyResolver: (req) => req.capabilityGrant?.teacherId || req.ip || 'unknown'
     })
   );
 
   router.get('/', async (req, res) => {
-    const teacher = req.teacher!;
-    const boards = await listBoardsForTeacher(teacher.id);
-    res.json({ boards });
+    const teacherId = req.capabilityGrant!.teacherId!;
+    try {
+      const boards = await listBoardsForTeacher(teacherId);
+      res.json({ boards });
+    } catch (error) {
+      logger.error('Failed to list boards', { teacherId, error: (error as Error).message });
+      res.status(503).json({ error: 'Nie udało się pobrać tablic. Spróbuj ponownie.' });
+    }
   });
 
   router.post('/', async (req, res) => {
-    const teacher = req.teacher!;
+    const teacherId = req.capabilityGrant!.teacherId!;
+    const teacher = await findTeacherById(teacherId);
+    if (!teacher) {
+      res.status(401).json({ error: 'Sesja nauczyciela jest nieprawidłowa.' });
+      return;
+    }
     const body = req.body ?? {};
     const title = typeof body.title === 'string' ? body.title : null;
     const studentName = typeof body.studentName === 'string' ? body.studentName : null;
     const validUntil = parseDate(body.validUntil);
 
     const result = await createBoardForTeacher({
-      teacherId: teacher.id,
+      teacherId,
       organizationId: teacher.organization_id ?? null,
       title,
       studentName,
@@ -52,10 +71,9 @@ export const createTeacherBoardsRouter = () => {
   });
 
   router.patch('/:id', async (req, res) => {
-    const teacher = req.teacher!;
+    const teacherId = req.capabilityGrant!.teacherId!;
     const body = req.body ?? {};
 
-    // Build params object without undefined values to satisfy exactOptionalPropertyTypes
     const params: import('../services/boardService').UpdateBoardParams = {};
     if (body.title !== undefined) {
       params.title = typeof body.title === 'string' ? body.title : null;
@@ -67,10 +85,10 @@ export const createTeacherBoardsRouter = () => {
       params.archivedAt = body.archived ? new Date() : null;
     }
 
-    const updated = await updateBoard(req.params.id, teacher.id, params);
+    const updated = await updateBoard(req.params.id, teacherId, params);
 
     if (!updated) {
-      res.status(404).json({ error: 'Board not found.' });
+      res.status(404).json({ error: 'Nie znaleziono tablicy.' });
       return;
     }
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="dialog-overlay" v-if="show" @click.self="closeOnBackdrop ? $emit('close') : null">
+  <div class="dialog-overlay" v-if="show" @click.self="closeOnBackdrop ? $emit('close') : null" role="dialog" aria-modal="true" :aria-label="title">
     <div class="dialog glass-panel">
       <div class="dialog-header">
         <h4>{{ title }}</h4>

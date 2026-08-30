@@ -1,15 +1,10 @@
 import { Router } from 'express';
 import { logger } from '../logger';
-import { config } from '../config';
 import { getDb } from '../db';
-import { BoardAccessLogRecord } from '../models/teacher';
-import { consumeMagicLink } from '../services/teacherMagicLinks';
-import { verifyTeacherPermanentToken } from '../services/teacherPermanentTokens';
-import { createTeacherSessionToken, teacherSessionCookieName } from '../services/teacherSessions';
-import { findTeacherById, markTeacherLogin } from '../services/teacherService';
+import type { CapabilityAccess } from '../pilot/capabilityAccess';
+import { issueTeacherSessionToken } from '../pilot/capabilityAccess';
+import { clientIpOf, ipForLog, teacherSessionCookie } from '../pilot/capabilityHttpAdapters';
 import { createRateLimiter } from '../middleware/rateLimiter';
-
-const sessionMaxAgeMs = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 const renderErrorPage = (res: import('express').Response, message: string, status = 400) => {
   res
@@ -19,93 +14,80 @@ const renderErrorPage = (res: import('express').Response, message: string, statu
     );
 };
 
-const getClientIp = (req: import('express').Request): string | null => {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    const first = forwarded.split(',')[0];
-    return first ? first.trim() : null;
-  }
-  return req.ip ?? null;
+const DENIAL_PAGE: Record<string, [string, number]> = {
+  missing: ['Link jest nieprawidłowy lub wygasł.', 400],
+  invalid: ['Link jest nieprawidłowy lub został unieważniony.', 400],
+  revoked: ['Ten link został unieważniony. Poproś administratora o nowy link.', 401],
+  expired: ['Ten link wygasł. Poproś administratora o nowy link.', 401],
+  inactive: ['Konto nauczyciela zostało wyłączone.', 403],
+  wrongTarget: ['Link jest nieprawidłowy.', 400],
+  unavailable: ['Usługa chwilowo niedostępna. Spróbuj ponownie za chwilę.', 503]
 };
 
-export const createTeacherAuthRouter = () => {
+const denialPage = (reason: string): [string, number] =>
+  DENIAL_PAGE[reason] ?? ['Link jest nieprawidłowy lub został unieważniony.', 400];
+
+/**
+ * Teacher Access Link login (ADR-0001): GET /teacher/login?token=... is the
+ * single entry. The link is validated through CapabilityAccess.decide()
+ * (durable active-link + teacher active + credential version checks); a grant
+ * exchanges for a teacher session cookie that itself embeds the credential
+ * version, so regeneration or deactivation kills it on the next request.
+ */
+export const createTeacherAuthRouter = (access: CapabilityAccess) => {
   const router = Router();
   const loginLimiter = createRateLimiter({ windowMs: 60_000, max: 10 });
 
   router.get('/teacher/login', loginLimiter, async (req, res) => {
     const correlationId = req.correlationId;
     const token = typeof req.query.token === 'string' ? req.query.token : '';
-    const teacherId = typeof req.query.id === 'string' ? req.query.id : '';
-    const isPermanent = req.query.permanent === '1';
 
-    if (!token || !teacherId) {
-      renderErrorPage(res, 'Link jest nieprawidlowy lub wygasl.', 400);
+    if (!token) {
+      renderErrorPage(res, 'Link jest nieprawidłowy lub wygasł.', 400);
+      return;
+    }
+
+    const decision = await access.decide({
+      credential: { kind: 'teacherAccessLink', token },
+      action: 'teacher.openDashboard',
+      now: new Date()
+    });
+
+    if (!decision.granted) {
+      const [message, status] = denialPage(decision.reason);
+      renderErrorPage(res, message, status);
+      return;
+    }
+
+    const teacherId = decision.teacherId;
+    if (!teacherId) {
+      renderErrorPage(res, 'Link jest nieprawidłowy.', 400);
       return;
     }
 
     try {
-      const teacher = await findTeacherById(teacherId);
-      if (!teacher || !teacher.is_active) {
-        renderErrorPage(res, 'Konto nauczyciela jest nieaktywne lub nie istnieje.', 404);
-        return;
-      }
-
-      const ip = getClientIp(req);
-      const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
-
-      let isValid = false;
-
-      if (isPermanent) {
-        // Permanent token - never expires, can be reused
-        const verifiedTeacher = await verifyTeacherPermanentToken(teacherId, token);
-        isValid = verifiedTeacher !== null;
-        if (!isValid) {
-          renderErrorPage(res, 'Link jest nieprawidlowy. Popros administratora o nowy link.', 400);
-          return;
-        }
-      } else {
-        // Magic link - one-time use, expires after 30 minutes
-        const result = await consumeMagicLink(teacherId, token, { ip, userAgent });
-        if (!result.success) {
-          const reason = result.reason === 'used'
-            ? 'Link zostal juz uzyty.'
-            : 'Link jest nieprawidlowy lub wygasl.';
-          renderErrorPage(res, reason, 400);
-          return;
-        }
-        isValid = true;
-      }
-
-      const sessionToken = createTeacherSessionToken(teacher.id, teacher.organization_id ?? null);
-      res.cookie(teacherSessionCookieName, sessionToken, {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: config.nodeEnv === 'production',
-        maxAge: sessionMaxAgeMs,
-        path: '/'
-      });
-
-      await markTeacherLogin(teacher.id);
+      // Durable bookkeeping FIRST: the session cookie is only issued after
+      // the writes succeed, so a half-failed login never leaves a session.
+      await getDb()('teachers').where({ id: teacherId }).update({ last_login_at: new Date() });
       await getDb()('board_access_logs').insert({
         board_id: null,
         actor_type: 'teacher',
-        actor_id: teacher.id,
-        ip_addr: ip ?? null,
-        user_agent: userAgent
+        actor_id: teacherId,
+        ip_addr: ipForLog(clientIpOf(req)),
+        user_agent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null
       });
 
+      teacherSessionCookie(res, issueTeacherSessionToken(teacherId, decision.credentialVersion));
       res.redirect('/teacher/dashboard');
     } catch (error) {
       logger.error('Teacher login failed', {
         error: (error as Error).message,
         teacherId,
-        isPermanent,
         correlationId
       });
-      renderErrorPage(res, 'Wystapil blad. Sprobuj ponownie lub popros o nowy link.', 500);
+      renderErrorPage(res, 'Wystąpił błąd. Spróbuj ponownie lub poproś o nowy link.', 500);
     }
   });
 
   return router;
 };
-

@@ -1,8 +1,8 @@
 <template>
   <div id="app" :class="{ 'dark-mode': darkMode }">
-    <Lobby v-if="!roomId" @join="handleJoinRoom" />
-    <template v-else-if="roomKey">
+    <template v-if="roomId && roomKey">
     <TopMenu
+      :role="effectiveRole"
       @clear-canvas="handleClearCanvas"
       @toggle-feature="toggleFeature"
       @open-room-manager="handleOpenRoomManager"
@@ -10,6 +10,7 @@
       @export-pdf-single="handleExportPdfSingle"
       @export-pdf-paged="handleExportPdfPaged"
       @import-whiteboard="showImportDialog = true"
+      @import-pdf="handleImportPdf"
       :active-feature="activeFeature"
      ></TopMenu>
     <!-- Canvas container takes full screen -->
@@ -35,14 +36,16 @@
         @update:solution="solution = $event"
         @update:has-char-groups="hasCharGroups = $event"
         @update:has-stylized-strokes="hasStylizedStrokes = $event"
+        @select-pen-preset="selectPenPreset"
       />
       <AIChatPanel
-        v-if="roomId"
+        v-if="can('experiment.ai')"
         :whiteboard-ref="whiteboard?.containerRef?.value || null"
         :room-id="roomId"
+        :ws-token="storedWsToken"
       />
        <GridAlignPanel
-         v-if="activeFeature === 'gridAlign'"
+         v-if="activeFeature === 'gridAlign' && can('experiment.gridAlign')"
          :options="gridAlignOptions"
          @update:options="gridAlignOptions = $event"
          @close="toggleFeature(null)"
@@ -63,29 +66,8 @@
          @action="triggerWhiteboardAction"
        />
 
-       <div v-if="activeFeature === 'mathRecognizer'" class="feature-panel math-recognizer-panel">
-         <div class="panel-header">
-           <span>Math Recognizer</span>
-           <button class="close-button" @click="toggleFeature(null)">X</button>
-         </div>
-         <div class="panel-content">
-           <button class="action-button" @click="triggerWhiteboardAction('recognizeEquation')">Recognize Equation</button>
-           <div class="status-display">Status: {{ recognitionStatus }}</div>
-           <div v-if="latexEquation" class="latex-preview-container">
-             LaTeX: <span id="latex-render-output"></span> <!-- Target for KaTeX -->
-           </div>
-           <div v-if="solution" class="status-display">Solution: {{ solution }}</div>
-           <button class="action-button" @click="triggerWhiteboardAction('applyGhostAnswer')" :disabled="!solution || solution.startsWith('Blad') || solution.startsWith('Nie mozna')">Apply Answer (Shift+Enter)</button>
-           <div class="slider-container">
-             <label>Ghost Opacity: {{ mathRecognizerOptions.ghostOpacity }}</label>
-             <input type="range" min="0" max="1" step="0.05" v-model.number="mathRecognizerOptions.ghostOpacity">
-           </div>
-           <div class="checkbox-container">
-             <input type="checkbox" id="show-hint" v-model="mathRecognizerOptions.showHint">
-             <label for="show-hint">Show AI Hint</label>
-           </div>
-       </div>
-      </div>
+      <!-- Math recognizer (AI OCR solving) is excluded from the Pilot surface;
+           it has no trigger while `experiment.ai` is unavailable. -->
 
       <MathGraphPanel
         v-if="showMathGraphPanel"
@@ -98,15 +80,27 @@
         @plot-data="handleAddElement"
       />
       <DiagramPanel
-        v-if="showDiagramPanel"
+        v-if="showDiagramPanel && can('experiment.ai')"
         @close="toggleDiagramPanel"
         @apply="handleDiagramApply"
       />
+      <ChemistryPanel
+        v-if="showChemistryPanel && can('experiment.chemistry')"
+        @close="toggleChemistryPanel"
+        @insert-element="handleAddElement"
+      />
 
-      <!-- Floating Toolbar (Left) -->
-      <div class="floating-toolbar">
+      <!-- 3.4: Floating Toolbar (Left) with auto-hide toggle -->
+      <button v-if="toolbarCollapsed" class="toolbar-expand-btn glass-panel" @click="toggleToolbar" title="Show toolbar">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+      <div class="floating-toolbar" :class="{ 'toolbar-hidden': toolbarCollapsed }">
+        <button class="toolbar-collapse-btn" @click="toggleToolbar" title="Hide toolbar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
         <ToolBar
           :active-tool="currentTool"
+          :role="effectiveRole"
           :color="currentColor"
           :fill-color="currentFillColor"
           :line-width="currentLineWidth"
@@ -135,6 +129,7 @@
           @toggle-diagram-panel="toggleDiagramPanel"
           @add-coordinate-system="handleAddCoordinateSystem"
           @toggle-calculator="toggleCalculator"
+          @toggle-chemistry-panel="toggleChemistryPanel"
           @toggle-debug="toggleDebugMode"
         />
       </div>
@@ -153,28 +148,36 @@
 
       <div class="floating-user-info glass-panel" :class="{ collapsed: userInfoCollapsed }">
         <div class="username-container">
-          <input 
-            type="text" 
-            v-model="username" 
+          <input
+            v-if="can('dev.editParticipantNames')"
+            type="text"
+            v-model="username"
             placeholder="Guest"
             class="username-input"
             @blur="updateUsername"
           />
+          <span v-else class="username-static" :title="username">{{ username }}</span>
         </div>
-        
+
         <div class="divider-vertical"></div>
 
         <div class="user-count" title="Online users">
           <div class="status-dot"></div>
           <span>{{ activeUsersCount }} Online</span>
         </div>
-        
-        <button class="share-btn" @click="shareRoom">
+
+        <button v-if="can('dev.legacyPeerRooms')" class="share-btn" @click="shareRoom">
           <component :is="ShareIcon" :size="16" />
           <span>Share</span>
         </button>
 
-        <button class="debug-btn" @click="toggleDebugMode" :class="{ active: debugMode }" title="Toggle Debug">
+        <button
+          v-if="can('dev.debugControls')"
+          class="debug-btn"
+          @click="toggleDebugMode"
+          :class="{ active: debugMode }"
+          title="Toggle Debug"
+        >
           D
         </button>
 
@@ -183,15 +186,18 @@
         </button>
       </div>
     </div>
-    
-    <!-- Dialogs -->
-    <ImportDialog 
-      :show="showImportDialog" 
+
+    <!-- Dialogs: raw board JSON import/export is a developer tool (ADR: Pilot
+         users rely on PDF). -->
+    <ImportDialog
+      v-if="can('dev.rawBoardTransfer')"
+      :show="showImportDialog"
       @close="showImportDialog = false"
       @import="handleImportState"
     />
-    <ExportDialog 
-      :show="showExportDialog" 
+    <ExportDialog
+      v-if="can('dev.rawBoardTransfer')"
+      :show="showExportDialog"
       :export-text="exportedState"
       @close="showExportDialog = false"
       @copy="copyToClipboard"
@@ -202,9 +208,11 @@
       @update:isVisible="val => isCalculatorVisible = val"
     />
 
-    <EncryptionStatus />
+    <EncryptionStatus v-if="can('dev.encryptionClaims')" />
 
     </template>
+    <Lobby v-else-if="can('dev.legacyPeerRooms')" @join="handleJoinRoom" />
+    <PilotUnavailable v-else />
 
     <!-- Global Error Display -->
     <div v-if="globalError" class="global-error-overlay">
@@ -232,6 +240,7 @@ import MathGraphPanel from './components/MathGraphPanel.vue';
 import PhysicsGraphPanel from './components/PhysicsGraphPanel.vue';
 import DiagramPanel from './components/DiagramPanel.vue';
 import AIChatPanel from './components/AIChatPanel.vue';
+import ChemistryPanel from './components/ChemistryPanel.vue';
 import EncryptionStatus from './components/EncryptionStatus.vue';
 import GridAlignPanel from './components/GridAlignPanel.vue';
 import HandwritingStylerPanel from './components/HandwritingStylerPanel.vue';
@@ -239,11 +248,14 @@ import * as Y from 'yjs';
 import { undoRedoState as globalUndoRedoState } from './utils/undoRedoState';
 
 import katex from 'katex';
-import { buildRoomHash, createNewRoomUrl, parseRoomHash } from './lib/roomLink';
+import { buildRoomHash, parseRoomHash } from './lib/roomLink';
 import { generateEncryptionKey } from './lib/crypto';
 import 'katex/dist/katex.min.css';
 import { drawStyledPen, DEFAULT_PEN_PRESETS, makePreviewPoints } from './utils/penStyles';
+import { usePdfImport } from './composables/usePdfImport';
 import { Users, Share2, ChevronRight, ChevronLeft } from 'lucide-vue-next';
+import PilotUnavailable from './views/PilotUnavailable.vue';
+import { featureAvailable } from './services/pilotSurface';
 
 // Debug logger
 const appDebugLog = (msg, ...args) => {
@@ -264,16 +276,29 @@ export default {
     PhysicsGraphPanel,
     DiagramPanel,
     AIChatPanel,
+    ChemistryPanel,
     EncryptionStatus,
     GridAlignPanel,
-    HandwritingStylerPanel
+    HandwritingStylerPanel,
+    PilotUnavailable
   },
   setup() {
     // --- State ---
     const whiteboard = ref(null);
-    const toolbar = ref(null); // Ref for the toolbar component
+    const toolbar = ref(null); // Ref for ToolBar component
     const roomId = ref(null);
     const roomKey = ref(null);
+    const userRole = ref(null); // null = peer room (no role), 'teacher' | 'student'
+
+    // --- Pilot surface (shared manifest, Module 9) ---
+    // Every conditional mount consults the same manifest version the server
+    // uses; in the Pilot build excluded features resolve unavailable, so no
+    // control, panel, dialog or provider call exists for them.
+    const effectiveRole = computed(() =>
+      userRole.value === 'teacher' || userRole.value === 'student' ? userRole.value : 'developer'
+    );
+    const can = (featureId, role = effectiveRole.value) =>
+      featureAvailable(featureId, role);
     const username = ref(localStorage.getItem('username') || 'Guest');
     const updateUsername = () => {
       localStorage.setItem('username', username.value);
@@ -292,6 +317,12 @@ export default {
     const isCalculatorVisible = ref(false);
     const toggleCalculator = () => {
       isCalculatorVisible.value = !isCalculatorVisible.value;
+    };
+    // 3.4: Toolbar auto-hide toggle with localStorage persistence
+    const toolbarCollapsed = ref(localStorage.getItem('toolbar_collapsed') === 'true');
+    const toggleToolbar = () => {
+      toolbarCollapsed.value = !toolbarCollapsed.value;
+      localStorage.setItem('toolbar_collapsed', String(toolbarCollapsed.value));
     };
     const toggleUserInfoPanel = () => {
       userInfoCollapsed.value = !userInfoCollapsed.value;
@@ -384,10 +415,23 @@ export default {
       return localStorage.getItem('board_ws_token') || null;
     });
 
+    // Decode role from a board wsToken (base64url payload before the dot)
+    const parseRoleFromToken = (token) => {
+      if (!token) return null;
+      try {
+        const [base] = token.split('.');
+        if (!base) return null;
+        const json = atob(base.replace(/-/g, '+').replace(/_/g, '/'));
+        const payload = JSON.parse(json);
+        return payload.role || null;
+      } catch { return null; }
+    };
+
     // Graph Panels
     const showMathGraphPanel = ref(false);
     const showPhysicsGraphPanel = ref(false);
     const showDiagramPanel = ref(false);
+    const showChemistryPanel = ref(false);
 
     const toggleMathGraphPanel = () => {
         showMathGraphPanel.value = !showMathGraphPanel.value;
@@ -410,6 +454,16 @@ export default {
         if (showDiagramPanel.value) {
           showMathGraphPanel.value = false;
           showPhysicsGraphPanel.value = false;
+          showChemistryPanel.value = false;
+        }
+    };
+
+    const toggleChemistryPanel = () => {
+        showChemistryPanel.value = !showChemistryPanel.value;
+        if (showChemistryPanel.value) {
+          showMathGraphPanel.value = false;
+          showPhysicsGraphPanel.value = false;
+          showDiagramPanel.value = false;
         }
     };
 
@@ -490,6 +544,13 @@ export default {
         console.warn('Whiteboard not ready to add element.', elementData);
       }
     };
+
+    const { importPdfFile } = usePdfImport({
+      addElementFromPanel: (data) => handleAddElement(data),
+      showToast: (msg, type, dur) => showNotification(msg, type),
+      debugLog: appDebugLog,
+    });
+    const handleImportPdf = (file) => importPdfFile(file);
 
     const handleDiagramApply = (diagramData) => {
       if (!diagramData?.nodes?.length) return;
@@ -772,7 +833,7 @@ export default {
     };
 
     const handleClearCanvas = () => {
-      if (confirm('Are you sure you want to clear the canvas? This cannot be undone.')) {
+      if (confirm('Wyczyścić całą tablicę? Tej operacji nie można cofnąć.')) {
         whiteboard.value?.clearCanvas?.({ skipConfirm: true });
       }
     };
@@ -867,7 +928,6 @@ export default {
     };
 
     const handleExportPdfSingle = async () => {
-      console.log('[App] handleExportPdfSingle');
       if (whiteboard.value?.exportBoardAsPdf) {
         await whiteboard.value.exportBoardAsPdf();
       } else {
@@ -877,7 +937,6 @@ export default {
     };
 
     const handleExportPdfPaged = async () => {
-      console.log('[App] handleExportPdfPaged');
       if (whiteboard.value?.exportBoardAsPdfPaged) {
         await whiteboard.value.exportBoardAsPdfPaged();
       } else {
@@ -1168,11 +1227,17 @@ export default {
       }
     };
 
-    watch(handwritingStylerOptions, () => {
+    // 5.8: Watch specific properties instead of deep watcher on entire options object
+    watch(() => handwritingStylerOptions.value.preset, () => {
       if (activeFeature.value === 'styleHandwriting') {
         queuePreviewRender();
       }
-    }, { deep: true });
+    });
+    watch(() => handwritingStylerOptions.value.smoothingFactor, () => {
+      if (activeFeature.value === 'styleHandwriting') {
+        queuePreviewRender();
+      }
+    });
 
     watch(currentColor, () => {
       if (activeFeature.value === 'styleHandwriting') {
@@ -1209,17 +1274,24 @@ export default {
           roomId.value = queryRoom;
           // Use a dummy key or skip encryption for token-based boards
           roomKey.value = 'board-token-access';
+          userRole.value = parseRoleFromToken(queryWsToken);
           if (queryName) {
             username.value = queryName;
             localStorage.setItem('username', queryName);
           }
           // Store wsToken for WhiteboardCanvas to use
           localStorage.setItem('board_ws_token', queryWsToken);
-          appDebugLog(`App mounted with board token. Room ID: ${roomId.value}`);
+          appDebugLog(`App mounted with board token. Room ID: ${roomId.value}, role: ${userRole.value}`);
           return;
         }
-        
-        // Standard encrypted room access
+
+        // Legacy peer-room access (development dev surface only). The Pilot
+        // never auto-bootstraps a room on `/`: Root.vue only mounts App for a
+        // board session, and the Lobby below is dev-only.
+        if (!can('dev.legacyPeerRooms', 'developer')) {
+          appDebugLog('Legacy peer rooms unavailable in this environment');
+          return;
+        }
         const parsedHash = parseRoomHash(window.location.hash);
         if (parsedHash) {
           roomId.value = parsedHash.roomId;
@@ -1229,16 +1301,10 @@ export default {
           roomId.value = queryRoom;
           await ensureRoomKey();
           updateRoomUrlHash();
-        } else {
-          const newUrl = await createNewRoomUrl();
-          const newParsed = parseRoomHash(new URL(newUrl).hash);
-          if (newParsed) {
-            roomId.value = newParsed.roomId;
-            roomKey.value = newParsed.roomKey;
-          }
-          window.history.replaceState({}, '', newUrl);
         }
-        localStorage.setItem('last_room_id', roomId.value);
+        if (roomId.value) {
+          localStorage.setItem('last_room_id', roomId.value);
+        }
         appDebugLog(`App mounted. Room ID: ${roomId.value}`);
       };
 
@@ -1268,6 +1334,8 @@ export default {
       ShareIcon: Share2,
       ChevronRightIcon: ChevronRight,
       ChevronLeftIcon: ChevronLeft,
+      can,
+      effectiveRole,
       whiteboard,
       toolbar,
       lastSaved,
@@ -1282,6 +1350,7 @@ export default {
       userInfoCollapsed,
       roomId,
       roomKey,
+      userRole,
       storedWsToken,
       currentTool,
       currentColor,
@@ -1291,7 +1360,9 @@ export default {
       currentArrowStyle,
       currentRoughness,
       currentFillColor,
-      isCalculatorVisible, // Return state for modal
+      isCalculatorVisible,
+      toolbarCollapsed,
+      toggleToolbar,
       activeUsersCount,
       localClientId,
       formattedLastSaved,
@@ -1353,8 +1424,11 @@ export default {
       showMathGraphPanel,
       showPhysicsGraphPanel,
       showDiagramPanel,
+      showChemistryPanel,
+      toggleChemistryPanel,
       handleAddElement,
       handleDiagramApply,
+      handleImportPdf,
       handleAddCoordinateSystem: (type) => {
         // Create default coordinate system element
         const elementData = {
@@ -1484,7 +1558,7 @@ body {
 
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 
-  z-index: 2000;
+  z-index: var(--z-toast, 5000);
 
 }
 
@@ -1514,7 +1588,7 @@ body {
 
   background: rgba(0,0,0,0.8);
 
-  z-index: 9999;
+  z-index: var(--z-error-overlay, 9999);
 
   display: flex;
 
@@ -1608,11 +1682,68 @@ body {
 
   pointer-events: none;
 
-  z-index: 3000;
+  z-index: var(--z-toolbar, 3000);
+
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
 }
 
 
+
+/* 3.4: Toolbar collapse/expand */
+.floating-toolbar.toolbar-hidden {
+  transform: translateY(-50%) translateX(calc(-100% - 40px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toolbar-collapse-btn {
+  position: absolute;
+  top: 4px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  background: var(--bg-surface, white);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  pointer-events: auto;
+  transition: all 0.2s;
+}
+
+.toolbar-collapse-btn:hover {
+  background: var(--bg-base, #f1f5f9);
+  color: var(--text-primary);
+}
+
+.toolbar-expand-btn {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-toolbar, 3000);
+  color: var(--text-secondary);
+  transition: all 0.2s;
+}
+
+.toolbar-expand-btn:hover {
+  transform: translateY(-50%) scale(1.1);
+  color: var(--text-primary);
+}
 
 /* Floating User Info */
 .floating-user-info {
@@ -1622,7 +1753,7 @@ body {
   display: flex;
   align-items: center;
   gap: 16px; /* Increased from 12px to prevent overlap */
-  z-index: 3000;
+  z-index: var(--z-user-info, 3000);
   pointer-events: auto;
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   
@@ -1657,7 +1788,7 @@ body {
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 3001;
+  z-index: calc(var(--z-user-info, 3000) + 1);
   width: 40px;
   height: 40px;
   display: flex;
@@ -1828,7 +1959,7 @@ body {
   width: 420px;
   max-width: 92vw;
 
-  z-index: 1010;
+  z-index: var(--z-panel, 1010);
 
   display: flex;
 

@@ -23,13 +23,21 @@ export default {
 .zoom-controls {
   position: absolute;
   bottom: 20px;
-  left: 20px;
+  right: 20px;
   display: flex;
   background-color: white;
   border-radius: 20px;
   padding: 5px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   z-index: 10;
+}
+
+/* 2.2: Use CSS variable for bottom offset (configurable by parent) */
+@media (max-width: 768px), (hover: none) {
+  .zoom-controls {
+    bottom: var(--zoom-controls-bottom, 80px);
+    right: 10px;
+  }
 }
 
 .zoom-btn {
@@ -46,7 +54,7 @@ export default {
 }
 
 .zoom-btn:hover {
-  color: #4285f4;
+  color: var(--accent-primary, #2563eb);
 }
 
 .zoom-level {
@@ -58,17 +66,19 @@ export default {
   color: #333;
 }
 
-:deep(.dark-mode) .zoom-controls {
-  background-color: #333;
-  color: white;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
-}
+@media (prefers-color-scheme: dark) {
+  .zoom-controls {
+    background-color: #333;
+    color: white;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+  }
 
-:deep(.dark-mode) .zoom-btn {
-  color: #f0f0f0;
-}
+  .zoom-btn {
+    color: #f0f0f0;
+  }
 
-:deep(.dark-mode) .zoom-level {
-  color: #f0f0f0;
+  .zoom-level {
+    color: #f0f0f0;
+  }
 }
 </style>

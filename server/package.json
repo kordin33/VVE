@@ -2,14 +2,15 @@
   "name": "server",
   "version": "1.0.0",
   "description": "Realtime whiteboard backend (Node.js + TypeScript)",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/src/server.js",
-    "start:prod": "npm run start",
+    "start:prod": "npm run migrate && npm run start",
     "test": "vitest run",
-    "migrate": "knex migrate:latest"
+    "migrate": "knex migrate:latest",
+    "seed:pilot": "ts-node scripts/pilotFixture.ts"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +21,7 @@
     "csv-parse": "^5.5.6",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "helmet": "^8.1.0",
     "knex": "^3.1.0",
     "lib0": "^0.2.114",
     "mathjs": "^14.4.0",

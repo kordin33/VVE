@@ -4,7 +4,7 @@
     class="calculator-modal-wrapper"
     :style="modalStyle"
     ref="modalRef"
-    @mousedown="startDrag"
+    @pointerdown="startDrag"
   >
     <!-- Header removed entirely -->
     <div class="modal-content">
@@ -59,8 +59,8 @@ const startDrag = (event) => {
     x: event.clientX - position.value.x,
     y: event.clientY - position.value.y,
   };
-  document.addEventListener('mousemove', handleDrag);
-  document.addEventListener('mouseup', stopDrag);
+  document.addEventListener('pointermove', handleDrag);
+  document.addEventListener('pointerup', stopDrag);
 };
 
 const handleDrag = (event) => {
@@ -69,21 +69,19 @@ const handleDrag = (event) => {
     x: event.clientX - dragStartOffset.value.x,
     y: event.clientY - dragStartOffset.value.y,
   };
-  // Optional: Add boundary checks
 };
 
 const stopDrag = () => {
   if (isDragging.value) {
     isDragging.value = false;
-    document.removeEventListener('mousemove', handleDrag);
-    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('pointermove', handleDrag);
+    document.removeEventListener('pointerup', stopDrag);
   }
 };
 
 onBeforeUnmount(() => {
-  // Clean up listeners if the component is destroyed while dragging
-  document.removeEventListener('mousemove', handleDrag);
-  document.removeEventListener('mouseup', stopDrag);
+  document.removeEventListener('pointermove', handleDrag);
+  document.removeEventListener('pointerup', stopDrag);
 });
 
 </script>

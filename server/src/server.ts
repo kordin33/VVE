@@ -9,27 +9,27 @@ import { RoomManager, RoomContext } from './rooms';
 import { FilePersistence } from './persistence';
 import { createHttpApp } from './httpApp';
 import { OpenRouterEquationSolver } from './services/aiSolver';
-import { verifyBoardWsToken } from './services/boardTokens';
+import { createCapabilityAccess } from './pilot/capabilityAccess';
+import { createWsAdmission } from './wsAdmission';
 import { BoardYjsPersistence } from './services/boardYjsPersistence';
 import { getDb } from './db';
 
-// Debug: Check API Key
+// Startup config check (no secrets logged)
 const apiKey = process.env.OPENROUTER_API_KEY;
-console.log('----------------------------------------');
-console.log('Server Startup Config Check:');
-console.log(`OPENROUTER_API_KEY present: ${!!apiKey}`);
-if (apiKey) {
-  console.log(`OPENROUTER_API_KEY length: ${apiKey.length}`);
-  console.log(`OPENROUTER_API_KEY prefix: ${apiKey.substring(0, 10)}...`);
+if (!apiKey) {
+  logger.warn('OPENROUTER_API_KEY is not set - AI features will be unavailable');
 } else {
-  console.error('CRITICAL: OPENROUTER_API_KEY is MISSING in process.env!');
+  logger.info('OPENROUTER_API_KEY configured', { length: apiKey.length });
 }
-console.log('----------------------------------------');
 
 const messageSync = 0;
 const messageAwareness = 1;
 
-type ManagedSocket = WebSocket & { isAlive?: boolean };
+type ManagedSocket = WebSocket & {
+  isAlive?: boolean;
+  msgCount?: number;
+  msgWindowStart?: number;
+};
 type AwarenessChange = {
   added: number[];
   updated: number[];
@@ -63,9 +63,7 @@ const broadcast = (
       sentCount++;
     }
   });
-  if (type === messageSync) {
-    console.log(`[Server] Broadcast sync update to ${sentCount} clients (total: ${room.connections.size})`);
-  }
+  // Verbose sync logging removed for performance
 };
 
 const toUint8Array = (raw: WebSocket.RawData): Uint8Array => {
@@ -90,8 +88,7 @@ const initializeRoom = (room: RoomContext) => {
     room.meta.updatedAt = timestamp;
     room.meta.lastActiveAt = timestamp;
     room.lastActive = timestamp;
-    logger.info('Generated update', { size: update.length, originIsWs: origin instanceof WebSocket, origin });
-    console.log(`[Server] Generated update. Size: ${update.length}, Origin: ${origin}`);
+    logger.debug('Generated update', { size: update.length, originIsWs: origin instanceof WebSocket });
     boardPersistence
       .recordUpdate(room.id, update, room.doc)
       .catch((error) =>
@@ -138,9 +135,57 @@ const sendInitialSync = (room: RoomContext, ws: WebSocket) => {
   }
 };
 
-const handleMessage = (room: RoomContext, ws: WebSocket, data: Uint8Array) => {
+// SEC-002: Simple per-connection rate limiting
+const WS_RATE_LIMIT = 300; // max messages per window
+const WS_RATE_WINDOW_MS = 1000; // 1-second window
+
+const checkRateLimit = (ws: ManagedSocket): boolean => {
+  const now = Date.now();
+  if (!ws.msgWindowStart || now - ws.msgWindowStart > WS_RATE_WINDOW_MS) {
+    ws.msgWindowStart = now;
+    ws.msgCount = 1;
+    return true;
+  }
+  ws.msgCount = (ws.msgCount || 0) + 1;
+  return ws.msgCount <= WS_RATE_LIMIT;
+};
+
+// H8: Per-IP connection limiting to prevent resource exhaustion
+const MAX_CONNECTIONS_PER_IP = 20;
+const ipConnectionCounts = new Map<string, number>();
+
+const getClientIp = (request: http.IncomingMessage): string => {
+  const forwarded = request.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0]?.trim() || request.socket.remoteAddress || 'unknown';
+  }
+  return request.socket.remoteAddress || 'unknown';
+};
+
+const trackIpConnect = (ip: string): boolean => {
+  const current = ipConnectionCounts.get(ip) || 0;
+  if (current >= MAX_CONNECTIONS_PER_IP) return false;
+  ipConnectionCounts.set(ip, current + 1);
+  return true;
+};
+
+const trackIpDisconnect = (ip: string): void => {
+  const current = ipConnectionCounts.get(ip) || 0;
+  if (current <= 1) {
+    ipConnectionCounts.delete(ip);
+  } else {
+    ipConnectionCounts.set(ip, current - 1);
+  }
+};
+
+const handleMessage = (room: RoomContext, ws: ManagedSocket, data: Uint8Array) => {
   if (!data || data.length === 0) {
     logger.debug('Ignoring empty WebSocket message');
+    return;
+  }
+
+  if (!checkRateLimit(ws)) {
+    logger.warn('WebSocket rate limit exceeded, dropping message');
     return;
   }
 
@@ -150,7 +195,7 @@ const handleMessage = (room: RoomContext, ws: WebSocket, data: Uint8Array) => {
   switch (messageType) {
     case messageSync: {
       try {
-        logger.info('Processing sync message', { size: payload.length });
+        logger.debug('Processing sync message', { size: payload.length });
         Y.applyUpdate(room.doc, payload, ws);
       } catch (error) {
         logger.warn('Failed to apply doc update', {
@@ -209,38 +254,48 @@ const boardPersistence = new BoardYjsPersistence();
 const roomManager = new RoomManager(persistence, boardPersistence);
 const aiSolver = new OpenRouterEquationSolver();
 boardPersistence.startCleanupJob();
-export const app = createHttpApp({ roomManager, aiSolver });
+// VVE-101: one CapabilityAccess instance owns every authorization decision
+// for HTTP and WebSocket. Legacy peer rooms remain reachable only on the
+// development surface with the internal dev flag (ADR-0010).
+const capabilityAccess = createCapabilityAccess();
+const wsAdmission = createWsAdmission(
+  capabilityAccess,
+  config.pilotEnvironment === 'development' && config.devSurface
+);
+export const app = createHttpApp({ roomManager, aiSolver, capabilityAccess });
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// 5.7: Limit max WebSocket payload to 5 MB to prevent memory abuse
+const wss = new WebSocketServer({ server, maxPayload: 5 * 1024 * 1024 });
 
 wss.on('connection', (socket: ManagedSocket, request) => {
+  const clientIp = getClientIp(request);
+
+  // H8: Per-IP connection limiting
+  if (!trackIpConnect(clientIp)) {
+    logger.warn('Per-IP connection limit exceeded', { ip: clientIp, max: MAX_CONNECTIONS_PER_IP });
+    socket.close(1013, 'Too many connections');
+    return;
+  }
+
   (async () => {
     const parsed = parseWsParams(request.url);
     if (!parsed) {
+      trackIpDisconnect(clientIp);
       socket.close(1008, 'Invalid room');
       return;
     }
 
     const { roomId, token } = parsed;
-    let isBoardRoom = false;
-    try {
-      isBoardRoom = await boardPersistence.isBoardRoom(roomId);
-    } catch (error) {
-      logger.error('Board lookup failed for WebSocket', {
-        roomId,
-        error: (error as Error).message
-      });
-      // Fail open for non-board rooms to preserve basic realtime when DB is down.
-      isBoardRoom = false;
-    }
 
-    const session = token ? verifyBoardWsToken(token) : null;
-    if (isBoardRoom) {
-      if (!session || session.boardId !== roomId) {
-        socket.close(1008, 'Unauthorized');
-        return;
-      }
+    // VVE-101: admission goes through CapabilityAccess.decide() — fail-closed
+    // on every database error (the previous fail-open path is deleted), with
+    // expiry/revocation/credential-version re-verified at admission time.
+    const admission = await wsAdmission.admit(roomId, token);
+    if (!admission.admitted) {
+      trackIpDisconnect(clientIp);
+      socket.close(admission.closeCode, admission.closeReason);
+      return;
     }
 
     const { room, created } = await roomManager.get(roomId);
@@ -260,10 +315,19 @@ wss.on('connection', (socket: ManagedSocket, request) => {
       handleMessage(room, socket, toUint8Array(raw));
     });
 
-    socket.on('close', () => removeConnection(roomId, room, socket));
-    socket.on('error', (error) => logger.warn('WebSocket error', { roomId, error: error.message }));
+    socket.on('close', () => {
+      removeConnection(roomId, room, socket);
+      trackIpDisconnect(clientIp);
+    });
+    // 5.3: Also remove connection on error to prevent leaked awareness states
+    socket.on('error', (error) => {
+      logger.warn('WebSocket error', { roomId, error: error.message });
+      removeConnection(roomId, room, socket);
+      trackIpDisconnect(clientIp);
+    });
   })().catch((error) => {
     logger.error('WebSocket connection failed', { error: (error as Error).message });
+    trackIpDisconnect(clientIp);
     socket.close(1011, 'Internal error');
   });
 });
@@ -308,9 +372,28 @@ startServer();
 const shutdown = () => {
   logger.info('Shutting down server');
   clearInterval(pingInterval);
-  wss.clients.forEach((client) => client.terminate());
+  // BE-004: Graceful close instead of hard terminate
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.close(1001, 'Server shutting down');
+    }
+  });
+  // Force terminate any lingering connections after 3 seconds
+  setTimeout(() => {
+    wss.clients.forEach((client) => client.terminate());
+  }, 3000);
   server.close(() => process.exit(0));
 };
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+// BE-005: Global error handlers to prevent silent crashes
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', { error: String(reason) });
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception - shutting down', { error: error.message, stack: error.stack });
+  shutdown();
+});

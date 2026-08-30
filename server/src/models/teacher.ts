@@ -7,17 +7,19 @@ export interface TeacherRecord {
   created_at: Date;
   last_login_at: Date | null;
   permanent_token_hash: string | null;
+  /** Durable credential version (VVE-101): bumped on regeneration/deactivation. */
+  access_credential_version: number;
 }
 
-export interface TeacherMagicLinkRecord {
+export interface TeacherAccessLinkRecord {
   id: string;
   teacher_id: string;
-  token_hash: string;
+  /** Retrievable token (ADR-0008). */
+  token: string;
+  credential_version: number;
+  is_active: boolean;
   created_at: Date;
-  expires_at: Date;
-  used_at: Date | null;
-  user_agent: string | null;
-  ip_addr: string | null;
+  regenerated_at: Date | null;
 }
 
 export interface BoardAccessLogRecord {

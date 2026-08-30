@@ -50,7 +50,8 @@ export interface RoomContext {
   lastActive: number;
   initialized?: boolean;
   hydrated?: boolean;
-  hydrating?: boolean;
+  // 6.2: Promise-based hydration lock instead of boolean flag
+  hydrationPromise?: Promise<void>;
   meta: RoomMetadata;
 }
 
@@ -118,8 +119,7 @@ export class RoomManager {
         connections: new Map(),
         lastActive: meta.lastActiveAt || now(),
         initialized: false, // Will be set by initializeRoom on first connection
-        hydrated: false, // Mark as not yet loaded from disk
-        hydrating: false,
+        hydrated: false,
         meta
       };
       this.rooms.set(roomId, room);
@@ -151,7 +151,6 @@ export class RoomManager {
       lastActive: timestamp,
       initialized: false,
       hydrated: this.boardPersistence ? false : true,
-      hydrating: false,
       meta: {
         roomId,
         displayName: roomId,
@@ -167,12 +166,19 @@ export class RoomManager {
     };
   }
 
+  private saveDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   private bumpActivity(room: RoomContext) {
     const timestamp = now();
     room.lastActive = timestamp;
     room.meta.lastActiveAt = timestamp;
-    // Debounce save?
-    this.saveRoom(room);
+    // Debounce persistence writes to avoid disk I/O on every access
+    const existing = this.saveDebounceTimers.get(room.id);
+    if (existing) clearTimeout(existing);
+    this.saveDebounceTimers.set(room.id, setTimeout(() => {
+      this.saveDebounceTimers.delete(room.id);
+      this.saveRoom(room);
+    }, 5000));
   }
 
   private async saveRoom(room: RoomContext) {
@@ -208,32 +214,37 @@ export class RoomManager {
       created = true;
     }
 
-    if (room && room.hydrated === false && !room.hydrating) {
-      room.hydrating = true;
-      try {
-        const isBoard = this.boardPersistence
-          ? await this.boardPersistence.isBoardRoom(roomId)
-          : false;
+    // 6.2: Promise-based hydration lock — concurrent get() calls await the same promise
+    if (room && room.hydrated === false) {
+      if (!room.hydrationPromise) {
+        room.hydrationPromise = (async () => {
+          try {
+            const isBoard = this.boardPersistence
+              ? await this.boardPersistence.isBoardRoom(roomId)
+              : false;
 
-        if (isBoard && this.boardPersistence) {
-          await this.boardPersistence.hydrate(room);
-        } else {
-          const data = await this.persistence.loadRoom(roomId);
-          if (data) {
-            Y.applyUpdate(room.doc, Y.encodeStateAsUpdate(data.doc));
-            room.meta = data.meta;
-          } else {
-            await this.saveRoom(room);
+            if (isBoard && this.boardPersistence) {
+              await this.boardPersistence.hydrate(room);
+            } else {
+              const data = await this.persistence.loadRoom(roomId);
+              if (data) {
+                Y.applyUpdate(room.doc, Y.encodeStateAsUpdate(data.doc));
+                room.meta = data.meta;
+              } else {
+                await this.saveRoom(room);
+              }
+              room.hydrated = true;
+            }
+          } catch (err) {
+            logger.error(`Failed to hydrate room ${roomId}`, {
+              error: (err as Error).message
+            });
+          } finally {
+            delete room.hydrationPromise;
           }
-          room.hydrated = true;
-        }
-      } catch (err) {
-        logger.error(`Failed to hydrate room ${roomId}`, {
-          error: (err as Error).message
-        });
-      } finally {
-        room.hydrating = false;
+        })();
       }
+      await room.hydrationPromise;
     }
 
     this.bumpActivity(room);

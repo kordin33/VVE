@@ -1,6 +1,7 @@
 import nodeFetch, { Response, RequestInit } from 'node-fetch';
 import { HttpError } from './httpError';
 import { create, all } from 'mathjs';
+import { logger } from '../logger';
 import type { FactoryFunctionMap } from 'mathjs';
 
 export interface EquationSolver {
@@ -268,14 +269,14 @@ export class OpenRouterEquationSolver implements EquationSolver {
         const content = payload.choices?.[0]?.message?.content?.trim();
 
         // Success!
-        console.log(`[AI] OCR successfully used model: ${currentModel}`);
+        logger.info('[AI] OCR successfully used model', { model: currentModel });
         return content ? content.replace(/```latex|```/g, '').trim() : '';
       } catch (error) {
         lastError = error as Error;
-        console.warn(`[AI] OCR model ${currentModel} failed:`, (error as Error).message);
+        logger.warn('[AI] OCR model failed', { model: currentModel, error: (error as Error).message });
 
         if (currentModel !== fallbackModels[fallbackModels.length - 1]) {
-          console.log(`[AI] Trying fallback OCR model...`);
+          logger.info('[AI] Trying fallback OCR model');
           continue;
         }
 
@@ -333,14 +334,14 @@ export class OpenRouterEquationSolver implements EquationSolver {
         const result = payload.choices?.[0]?.message?.content?.trim() || '';
 
         // Success!
-        console.log(`[AI] Solver successfully used model: ${currentModel}`);
+        logger.info('[AI] Solver successfully used model', { model: currentModel });
         return result;
       } catch (error) {
         lastError = error as Error;
-        console.warn(`[AI] Solver model ${currentModel} failed:`, (error as Error).message);
+        logger.warn('[AI] Solver model failed', { model: currentModel, error: (error as Error).message });
 
         if (currentModel !== fallbackModels[fallbackModels.length - 1]) {
-          console.log(`[AI] Trying fallback Solver model...`);
+          logger.info('[AI] Trying fallback Solver model');
           continue;
         }
 
@@ -398,7 +399,7 @@ export class OpenRouterEquationSolver implements EquationSolver {
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(`[AI Solver] Vision Chat request failed. Status: ${response.status}, Body: ${text}`);
+      logger.error('[AI Solver] Vision Chat request failed', { status: response.status });
       throw new Error(`Vision Chat request failed (${response.status}): ${text}`);
     }
 

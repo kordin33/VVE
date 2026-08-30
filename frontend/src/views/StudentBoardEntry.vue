@@ -32,7 +32,6 @@
                <span class="label-sm">Ważne do:</span>
                <span class="value-mono">{{ validUntil }}</span>
              </div>
-             <div v-if="readOnly" class="badge-warn">Tylko odczyt</div>
           </div>
 
           <div class="actions">
@@ -40,7 +39,7 @@
               Łączenie...
             </div>
             <button class="btn-primary full-width big-btn" :disabled="loading || !boardInfo" @click="startBoard">
-              {{ readOnly ? 'Otwórz podgląd' : 'Dołącz do lekcji' }}
+              Dołącz do lekcji
             </button>
           </div>
         </div>
@@ -76,7 +75,6 @@ const error = ref('');
 const showCanvas = ref(false);
 const connectionStatus = ref('connecting');
 
-const readOnly = computed(() => Boolean(boardInfo.value?.readOnly));
 const boardTitle = computed(() => boardInfo.value?.title || 'Tablica');
 const validUntil = computed(() => {
   try { return boardInfo.value?.validUntil ? new Date(boardInfo.value.validUntil).toLocaleDateString() : 'Bezterminowo'; }
@@ -88,7 +86,16 @@ const fetchBoard = async () => {
   try {
     const token = new URLSearchParams(window.location.search).get('token') || '';
     const res = await fetch(`${apiBase}/api/board/${props.slug}?token=${encodeURIComponent(token)}`, { credentials: 'include' });
-    if (!res.ok) throw new Error('Link jest nieprawidłowy lub wygasł.');
+    // Expiry, revocation and deactivation are DENIALS from CapabilityAccess:
+    // show the server's Polish message instead of a half-loaded board.
+    if (!res.ok) {
+      let message = 'Link jest nieprawidłowy lub wygasł.';
+      try {
+        const body = await res.json();
+        if (typeof body.error === 'string' && body.error) message = body.error;
+      } catch { /* keep the fallback */ }
+      throw new Error(message);
+    }
     boardInfo.value = await res.json();
   } catch (err) { error.value = err.message; }
   finally { loading.value = false; }
@@ -138,7 +145,6 @@ h1 { font-size: 26px; margin: 0; color: var(--text-primary); font-weight: 700; }
 .term-info { display: flex; gap: 8px; align-items: baseline; }
 .label-sm { font-size: 13px; color: var(--text-secondary); }
 .value-mono { font-family: monospace; color: var(--text-primary); font-size: 14px; font-weight: 500; }
-.badge-warn { background: #fee2e2; color: #b91c1c; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
 
 .big-btn { height: 48px; font-size: 16px; font-weight: 600; }
 .full-width { width: 100%; }

@@ -31,7 +31,11 @@ class StubSolver implements EquationSolver {
 const createTestApp = (solver?: EquationSolver) =>
   createHttpApp({
     roomManager: new RoomManager(),
-    aiSolver: solver ?? new StubSolver()
+    aiSolver: solver ?? new StubSolver(),
+    // Local development surface with the internal dev flag: keeps the legacy
+    // rooms API and AI routes reachable so their behavior stays covered.
+    environment: 'development',
+    devSurface: true
   });
 
 describe('HTTP API', () => {
@@ -42,7 +46,7 @@ describe('HTTP API', () => {
     expect(res.body.status).toBe('ok');
   });
 
-  it('creates and retrieves rooms', async () => {
+  it('creates and retrieves rooms (development dev surface only)', async () => {
     const app = createTestApp();
     const createRes = await request(app).post('/api/rooms/').send({ roomId: 'demo', displayName: 'Demo' });
     expect(createRes.status).toBe(201);

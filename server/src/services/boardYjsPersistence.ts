@@ -25,10 +25,7 @@ type FlushState = {
 const SNAPSHOT_EVERY_UPDATES = 20;
 const SNAPSHOT_INTERVAL_MS = 10_000;
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
-
-// UUID v4 regex pattern - validates proper UUID format before querying DB
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const isValidUUID = (id: string): boolean => UUID_REGEX.test(id);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class BoardYjsPersistence {
   private knownBoards = new Set<string>();
@@ -39,13 +36,10 @@ export class BoardYjsPersistence {
   async isBoardRoom(boardId: string): Promise<boolean> {
     if (this.knownBoards.has(boardId)) return true;
     if (this.missingBoards.has(boardId)) return false;
-
-    // If boardId is not a valid UUID, it can't be a board room (boards table uses UUID primary key)
-    if (!isValidUUID(boardId)) {
+    if (!UUID_PATTERN.test(boardId)) {
       this.missingBoards.add(boardId);
       return false;
     }
-
     const row = await getDb()('boards').where({ id: boardId }).first('id');
     if (row) {
       this.knownBoards.add(boardId);
@@ -142,7 +136,8 @@ export class BoardYjsPersistence {
     if (!isBoard) return;
     try {
       const snapshot = Y.encodeStateAsUpdate(doc);
-      await getDb()('board_yjs_state')
+      const db = getDb();
+      await db('board_yjs_state')
         .insert({
           board_id: boardId,
           ydoc_state: Buffer.from(snapshot),
@@ -153,6 +148,17 @@ export class BoardYjsPersistence {
           ydoc_state: Buffer.from(snapshot),
           updated_at: new Date()
         });
+
+      // 6.1: Size-based compaction — prune incremental updates after snapshot
+      const deleted = await db('board_yjs_updates')
+        .where({ board_id: boardId })
+        .del();
+      if (deleted > 0) {
+        logger.debug('Compacted incremental updates after snapshot', {
+          boardId,
+          deletedRows: deleted
+        });
+      }
     } catch (error) {
       logger.error('Forced snapshot failed', {
         boardId,

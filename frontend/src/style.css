@@ -49,6 +49,23 @@
   --glass-border: #e2e8f0;
   --glass-highlight: #f8fafc;
   --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+
+  /* 3.1: Unified z-index system */
+  --z-canvas: 1;
+  --z-grid: 10;
+  --z-floating-options: 1001;
+  --z-panel: 1010;
+  --z-toolbar: 3000;
+  --z-user-info: 3000;
+  --z-toast: 5000;
+  --z-modal: 8000;
+  --z-error-overlay: 9999;
+
+  /* --- Missing variables --- */
+  --radius-xl: 16px;
+  --radius-sm: 4px;
+  --ease-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+  --accent-glow: 0 0 16px rgba(37, 99, 235, 0.3);
 }
 
 /* --- Global Reset & Typography --- */

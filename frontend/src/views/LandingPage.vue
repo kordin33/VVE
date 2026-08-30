@@ -196,7 +196,7 @@ export default {
 }
 
 .logo svg {
-  stroke: #4285f4;
+  stroke: var(--accent-primary, #2563eb);
   width: 48px;
   height: 48px;
 }
@@ -264,7 +264,7 @@ input {
 
 input:focus {
   outline: none;
-  border-color: #4285f4;
+  border-color: var(--accent-primary, #2563eb);
 }
 
 .btn {
@@ -287,7 +287,7 @@ input:focus {
 }
 
 .btn-primary {
-  background-color: #4285f4;
+  background-color: var(--accent-primary, #2563eb);
   color: white;
 }
 

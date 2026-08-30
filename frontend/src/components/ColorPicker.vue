@@ -20,9 +20,9 @@
 
         <!-- Ostatnio użyte kolory -->
         <div
-          v-for="(color, index) in recentColors.slice(0, 4)"
+          v-for="(color, index) in recentColors.slice(0, 6)"
           :key="'recent-' + index"
-          class="color-option"
+          class="color-option recent"
           :style="{ backgroundColor: color }"
           :class="{ active: selectedColor === color }"
           @click="selectColor(color)"
@@ -45,7 +45,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch } from 'vue'; // Import ref
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 
 export default {
   name: 'ColorPicker',
@@ -63,24 +63,23 @@ export default {
     const showGrid = ref(false); // Reactive variable for grid visibility
 
     const basicColors = [
-      '#000000', '#FFFFFF', '#F44336', '#4CAF50',
-      '#2196F3', '#FFEB3B', '#9C27B0', '#FF9800'
+      '#000000', '#434343', '#666666', '#999999', '#CCCCCC', '#FFFFFF',
+      '#F44336', '#E91E63', '#9C27B0', '#673AB7',
+      '#3F51B5', '#2196F3', '#03A9F4', '#00BCD4',
+      '#009688', '#4CAF50', '#8BC34A', '#CDDC39',
+      '#FFEB3B', '#FFC107', '#FF9800', '#FF5722',
+      '#795548', '#607D8B'
     ];
     const basicColorNames = [
-      'Czarny', 'Biały', 'Czerwony', 'Zielony',
-      'Niebieski', 'Żółty', 'Fioletowy', 'Pomarańczowy'
+      'Czarny', 'Ciemnoszary', 'Szary', 'Jasnoszary', 'Srebrny', 'Biały',
+      'Czerwony', 'Różowy', 'Fioletowy', 'Głęboki fiolet',
+      'Indygo', 'Niebieski', 'Jasnoniebieski', 'Cyjan',
+      'Morski', 'Zielony', 'Jasnozielony', 'Limonkowy',
+      'Żółty', 'Bursztynowy', 'Pomarańczowy', 'Głęboki pomarańcz',
+      'Brązowy', 'Szaroniebieski'
     ];
-    // Full palette for name lookup
-     const colorPalette = [
-        '#000000', '#FFFFFF', '#F44336', '#4CAF50',
-        '#2196F3', '#FFEB3B', '#9C27B0', '#FF9800',
-        '#795548', '#607D8B', '#E91E63', '#00BCD4'
-      ];
-      const colorNames = [
-        'Czarny', 'Biały', 'Czerwony', 'Zielony',
-        'Niebieski', 'Żółty', 'Fioletowy', 'Pomarańczowy',
-        'Brązowy', 'Szary niebieski', 'Różowy', 'Cyjan'
-      ];
+    const colorPalette = basicColors;
+    const colorNames = basicColorNames;
 
     const colorName = computed(() => {
       const index = colorPalette.findIndex(c =>
@@ -98,7 +97,7 @@ export default {
         recentColors.value.splice(index, 1);
       }
       recentColors.value.unshift(color);
-      if (recentColors.value.length > 4) {
+      if (recentColors.value.length > 6) {
         recentColors.value.pop();
       }
       if (window.localStorage) {
@@ -126,17 +125,29 @@ export default {
       customColor.value = color; // Keep custom picker synced
       addToRecent(color);
       emit('update:modelValue', color); // Emit for v-model
-      console.log('ColorPicker: Wybrano kolor', color);
       showGrid.value = false; // Close grid after selection
     };
+
+    const container = ref(null);
 
     const toggleGrid = () => {
       showGrid.value = !showGrid.value;
     };
 
+    // 3.5: Click-outside handler to close color grid
+    const handleClickOutside = (event) => {
+      if (container.value && !container.value.contains(event.target)) {
+        showGrid.value = false;
+      }
+    };
+
     onMounted(() => {
       loadRecentColors();
-      // Add click outside listener for the grid? Optional, parent handles it now.
+      document.addEventListener('pointerdown', handleClickOutside);
+    });
+
+    onBeforeUnmount(() => {
+      document.removeEventListener('pointerdown', handleClickOutside);
     });
 
     watch(() => props.modelValue, (newValue) => {
@@ -145,6 +156,7 @@ export default {
     });
 
     return {
+      container,
       selectedColor,
       customColor,
       recentColors,
@@ -152,8 +164,8 @@ export default {
       basicColorNames,
       colorName,
       selectColor,
-      showGrid, // Expose grid state
-      toggleGrid // Expose toggle method
+      showGrid,
+      toggleGrid
     };
   }
 }
@@ -195,21 +207,34 @@ export default {
   margin: 0 auto;
 }
 
+/* 2.1: Viewport-aware positioning — auto-flip if grid overflows viewport */
 .colors-grid {
   position: absolute;
-  left: 100%; /* Position to the right of the button */
+  left: 100%;
   top: 0;
-  background-color: var(--toolbar-bg); /* Use toolbar background */
+  background-color: var(--toolbar-bg);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   padding: 8px;
-  margin-left: 8px; /* Space from button */
-  z-index: 10; /* Above button, below floating options */
-  display: grid; /* Use grid directly */
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  width: 144px;
+  margin-left: 8px;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  width: 198px;
   border: 1px solid var(--border-color);
+}
+
+/* On narrow screens / touch devices, position grid above/below instead of right */
+@media (max-width: 768px), (hover: none) {
+  .colors-grid {
+    left: 50%;
+    top: auto;
+    bottom: 100%;
+    transform: translateX(-50%);
+    margin-left: 0;
+    margin-bottom: 8px;
+  }
 }
 
 /* Removed hover style for grid */

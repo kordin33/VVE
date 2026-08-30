@@ -62,21 +62,25 @@ export default {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
-:deep(.dark-mode) .theme-btn {
-  background-color: rgba(255, 255, 255, 0.3);
-  color: #fff;
+@media (prefers-color-scheme: dark) {
+  .theme-btn {
+    background-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+  }
+
+  .theme-btn:hover {
+    background-color: rgba(255, 255, 255, 0.4);
+  }
 }
 
-:deep(.dark-mode) .theme-btn:hover {
-  background-color: rgba(255, 255, 255, 0.4);
-}
+@media (prefers-color-scheme: light) {
+  .theme-btn {
+    background-color: rgba(0, 0, 0, 0.3);
+    color: #fff;
+  }
 
-:deep(:not(.dark-mode)) .theme-btn {
-  background-color: rgba(0, 0, 0, 0.3);
-  color: #fff;
-}
-
-:deep(:not(.dark-mode)) .theme-btn:hover {
-  background-color: rgba(0, 0, 0, 0.5);
+  .theme-btn:hover {
+    background-color: rgba(0, 0, 0, 0.5);
+  }
 }
 </style>

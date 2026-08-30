@@ -224,12 +224,21 @@ export const createTextElement = (position, text, color, fontSize) => {
 export const createImageElement = (dataUrl, x, y) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    
+
+    // 1.10: Timeout 10s on image loading
+    const timeout = setTimeout(() => {
+      img.onload = null;
+      img.onerror = null;
+      img.src = '';
+      reject(new Error("Image loading timed out (10s)"));
+    }, 10_000);
+
     img.onload = () => {
+      clearTimeout(timeout);
       // Calculate reasonable size (adjust as needed)
       let width = img.width;
       let height = img.height;
-      
+
       // Scale down large images proportionally
       const MAX_SIZE = 500;
       if (width > MAX_SIZE || height > MAX_SIZE) {
@@ -237,16 +246,16 @@ export const createImageElement = (dataUrl, x, y) => {
         width *= ratio;
         height *= ratio;
       }
-      
+
       // Calculate top-left from center for the position object
       const topLeftX = x - width / 2;
       const topLeftY = y - height / 2;
 
       resolve({
         type: 'image',
-        x: topLeftX, // Store top-left x
-        y: topLeftY, // Store top-left y
-        position: { x: topLeftX, y: topLeftY }, // Ensure position object uses top-left
+        x: topLeftX,
+        y: topLeftY,
+        position: { x: topLeftX, y: topLeftY },
         dataUrl,
         src: dataUrl,
         width,
@@ -254,11 +263,12 @@ export const createImageElement = (dataUrl, x, y) => {
         timestamp: Date.now()
       });
     };
-    
+
     img.onerror = () => {
+      clearTimeout(timeout);
       reject(new Error("Failed to load image"));
     };
-    
+
     img.src = dataUrl;
   });
 };

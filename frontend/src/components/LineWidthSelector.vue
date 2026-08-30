@@ -69,7 +69,8 @@ export default {
   mounted() {
     document.addEventListener('click', this.handleClickOutside);
   },
-  beforeDestroy() {
+  // 9.3: Fix Vue 2 beforeDestroy → Vue 3 beforeUnmount
+  beforeUnmount() {
     document.removeEventListener('click', this.handleClickOutside);
   },
   methods: {
@@ -107,10 +108,11 @@ export default {
   display: inline-block;
 }
 
+/* 3.3: Use dynamic color from prop instead of hardcoded #0b20ff */
 .line-width-preview {
   width: 1px;
   height: 36px;
-  background-color: #0b20ff;
+  background-color: var(--line-preview-color, currentColor);
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -189,7 +191,7 @@ export default {
 }
 
 .width-option.active {
-  background-color: #4285f4;
+  background-color: var(--accent-primary, #2563eb);
   color: white;
 }
 

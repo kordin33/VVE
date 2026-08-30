@@ -2,18 +2,13 @@ import express, { Router } from 'express';
 import multer from 'multer';
 import { parse } from 'csv-parse/sync';
 import { logger } from '../logger';
-import { config } from '../config';
-import { createTeacherMagicLink } from '../services/teacherMagicLinks';
-import { createOrGetPermanentToken } from '../services/teacherPermanentTokens';
-import { getOrCreateTeacher, findTeacherById, normalizeTeacherEmail, getAllTeachers } from '../services/teacherService';
-import { getDb } from '../db';
+import type { CapabilityAccess } from '../pilot/capabilityAccess';
 
-const upload = multer({ storage: multer.memoryStorage() });
+// 4.7: Limit file upload size to 5MB
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const textParser = express.text({ type: ['text/csv', 'text/plain', 'application/csv'] });
 
 type ImportRow = { email: string; fullName?: string | null };
-
-const isEmailValid = (email: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
 
 const parseCsvTeachers = (csv: string): ImportRow[] => {
   try {
@@ -74,7 +69,7 @@ const dedupeByEmail = (rows: ImportRow[]): ImportRow[] => {
   const seen = new Set<string>();
   const result: ImportRow[] = [];
   for (const row of rows) {
-    const normalized = normalizeTeacherEmail(row.email);
+    const normalized = row.email.trim().toLowerCase();
     if (seen.has(normalized)) continue;
     seen.add(normalized);
     result.push({ ...row, email: normalized });
@@ -82,28 +77,62 @@ const dedupeByEmail = (rows: ImportRow[]): ImportRow[] => {
   return result;
 };
 
-export const createAdminTeachersRouter = () => {
+/**
+ * Administrator teacher management through CapabilityAccess (VVE-101).
+ *
+ * GET / is side-effect-free: it lists teachers WITH their current retrievable
+ * Teacher Access Link (ADR-0008) and never creates or rotates anything.
+ * Regeneration is the explicit POST /:id/regenerate-link; deactivation is the
+ * explicit POST /:id/deactivate and ends all access immediately.
+ */
+export const createAdminTeachersRouter = (access: CapabilityAccess) => {
   const router = Router();
 
-  // List all teachers with their permanent link status
-  router.get('/', async (req, res) => {
-    try {
-      const teachers = await getAllTeachers();
-
-      const results = teachers.map(t => ({
-        teacherId: t.id,
-        email: t.email,
-        fullName: t.full_name,
-        createdAt: t.created_at,
-        lastLoginAt: t.last_login_at,
-        hasPermanentLink: Boolean(t.permanent_token_hash)
-      }));
-
-      res.json({ teachers: results });
-    } catch (error) {
-      logger.error('Failed to list teachers', { error: (error as Error).message });
-      res.status(500).json({ error: 'Unable to list teachers.' });
+  // List teachers with their current link — read-only, never rotates.
+  router.get('/', async (_req, res) => {
+    const result = await access.listTeacherAccessLinks();
+    if ('error' in result) {
+      res.status(503).json({ error: 'Nie udało się pobrać listy nauczycieli. Spróbuj ponownie.' });
+      return;
     }
+    res.json({
+      teachers: result.map((t) => ({
+        teacherId: t.teacherId,
+        email: t.email,
+        internalLabel: t.internalLabel,
+        isActive: t.isActive,
+        createdAt: t.createdAt,
+        lastLoginAt: t.lastLoginAt,
+        accessLink: t.accessLink
+      }))
+    });
+  });
+
+  // Create one teacher (internal label only) with exactly one active link.
+  router.post('/', async (req, res) => {
+    const body = req.body ?? {};
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const internalLabel = typeof body.internalLabel === 'string' ? body.internalLabel.trim() : null;
+    if (!email) {
+      res.status(400).json({ error: 'Adres email jest wymagany.' });
+      return;
+    }
+    const result = await access.createOrReuseTeacherAccessLink({ email, internalLabel });
+    if (!result.ok) {
+      if (result.reason === 'invalidEmail') {
+        res.status(400).json({ error: 'Nieprawidłowy adres email.' });
+        return;
+      }
+      res.status(503).json({ error: 'Nie udało się dodać nauczyciela. Spróbuj ponownie.' });
+      return;
+    }
+    res.status(result.created ? 201 : 200).json({
+      teacherId: result.teacherId,
+      email: result.email,
+      internalLabel: result.internalLabel,
+      created: result.created,
+      accessLink: result.accessLink
+    });
   });
 
   router.post('/import', textParser, upload.single('file'), async (req, res) => {
@@ -121,85 +150,63 @@ export const createAdminTeachersRouter = () => {
     let createdCount = 0;
 
     for (const row of entries) {
-      if (!isEmailValid(row.email)) {
-        results.push({ email: row.email, error: 'Nieprawidlowy email.' });
+      const result = await access.createOrReuseTeacherAccessLink({ email: row.email, internalLabel: row.fullName ?? null });
+      if (!result.ok) {
+        results.push({ email: row.email, error: result.reason === 'invalidEmail' ? 'Nieprawidłowy email.' : 'Import nie powiódł się.' });
         continue;
       }
-
-      try {
-        const { teacher, created } = await getOrCreateTeacher({
-          email: row.email,
-          fullName: row.fullName ?? null
-        });
-        if (created) createdCount += 1;
-
-        // Generate permanent link for the teacher (can be copied by admin anytime)
-        const permanentToken = await createOrGetPermanentToken(teacher.id);
-        results.push({
-          email: teacher.email,
-          fullName: teacher.full_name,
-          teacherId: teacher.id,
-          created,
-          permanentLink: permanentToken.url // Permanent link - never expires!
-        });
-      } catch (error) {
-        logger.error('Failed to import teacher', { email: row.email, error: (error as Error).message });
-        results.push({ email: row.email, error: 'Import failed.' });
-      }
+      if (result.created) createdCount += 1;
+      results.push({
+        email: result.email,
+        internalLabel: result.internalLabel,
+        teacherId: result.teacherId,
+        created: result.created,
+        accessLink: result.accessLink
+      });
     }
 
+    res.json({ imported: results.length, created: createdCount, results });
+  });
+
+  // EXPLICIT regeneration: atomically invalidates only the previous credential.
+  router.post('/:id/regenerate-link', async (req, res) => {
+    const teacherId = req.params.id;
+    const result = await access.regenerateTeacherAccessLink(teacherId);
+    if (!result.ok) {
+      if (result.reason === 'notFound') {
+        res.status(404).json({ error: 'Nie znaleziono nauczyciela.' });
+        return;
+      }
+      res.status(503).json({ error: 'Nie udało się wygenerować nowego linku. Spróbuj ponownie.' });
+      return;
+    }
     res.json({
-      imported: results.length,
-      created: createdCount,
-      results
+      teacherId,
+      email: result.email,
+      internalLabel: result.internalLabel,
+      accessLink: result.accessLink,
+      note: 'Poprzedni link został unieważniony. Tablice nauczyciela pozostały bez zmian.'
     });
   });
 
-  // Generate/regenerate permanent link for a teacher (admin can copy this anytime)
-  router.post('/:id/permanent-link', async (req, res) => {
+  // Deactivation ends ALL access immediately (board deletion scheduling is VVE-102).
+  router.post('/:id/deactivate', async (req, res) => {
     const teacherId = req.params.id;
-    try {
-      const teacher = await findTeacherById(teacherId);
-      if (!teacher) {
-        res.status(404).json({ error: 'Teacher not found.' });
+    const result = await access.deactivateTeacher(teacherId);
+    if (!result.ok) {
+      if (result.reason === 'notFound') {
+        res.status(404).json({ error: 'Nie znaleziono nauczyciela.' });
         return;
       }
-      const permanentToken = await createOrGetPermanentToken(teacherId);
-      res.json({
-        teacherId,
-        email: teacher.email,
-        fullName: teacher.full_name,
-        permanentLink: permanentToken.url,
-        note: 'Ten link nigdy nie wygasa i moze byc uzywany wielokrotnie.'
-      });
-    } catch (error) {
-      logger.error('Failed to generate permanent link', { teacherId, error: (error as Error).message });
-      res.status(500).json({ error: 'Unable to generate permanent link.' });
-    }
-  });
-
-  // Keep the old magic-link endpoint for backwards compatibility
-  router.post('/:id/magic-link', async (req, res) => {
-    const teacherId = req.params.id;
-    try {
-      const teacher = await findTeacherById(teacherId);
-      if (!teacher) {
-        res.status(404).json({ error: 'Teacher not found.' });
+      if (result.reason === 'alreadyInactive') {
+        res.status(409).json({ error: 'Nauczyciel jest już wyłączony.' });
         return;
       }
-      const magicLink = await createTeacherMagicLink(teacherId);
-      res.json({
-        teacherId,
-        expiresAt: magicLink.expiresAt.toISOString(),
-        magicLink: magicLink.url,
-        note: 'Ten link jest jednorazowy i wygasa po 30 minutach. Uzyj /permanent-link dla stalego linku.'
-      });
-    } catch (error) {
-      logger.error('Failed to generate magic link', { teacherId, error: (error as Error).message });
-      res.status(500).json({ error: 'Unable to generate magic link.' });
+      res.status(503).json({ error: 'Nie udało się wyłączyć nauczyciela. Spróbuj ponownie.' });
+      return;
     }
+    res.json({ teacherId, deactivated: true });
   });
 
   return router;
 };
-

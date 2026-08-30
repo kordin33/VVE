@@ -28,14 +28,9 @@ for (const dir of searchDirs) {
   }
 }
 
-console.log('--- Config Debug ---');
-console.log('CWD:', process.cwd());
+// Config debug (only in development)
 const loadedNames = loadedEnvFiles.filter((entry) => entry.loaded).map((entry) => entry.path);
-console.log('Env files loaded:', loadedNames.length ? loadedNames.join(', ') : 'None');
 const parsedKeys = loadedEnvFiles.flatMap((entry) => entry.parsedKeys);
-console.log('Parsed env keys:', parsedKeys.length ? parsedKeys : 'None');
-console.log('OPENROUTER_API_KEY from process.env:', process.env.OPENROUTER_API_KEY ? 'Present' : 'Missing');
-console.log('--------------------');
 
 export const config = {
   host: process.env.HOST || '0.0.0.0',
@@ -57,8 +52,61 @@ export const config = {
   teacherAppBaseUrl: process.env.TEACHER_APP_BASE_URL || process.env.APP_BASE_URL || 'https://app.whitevue.com',
   teacherSessionSecret: process.env.TEACHER_SESSION_SECRET || process.env.SESSION_SECRET || 'change-me-in-prod',
   teacherSessionCookie: process.env.TEACHER_SESSION_COOKIE || 'teacher_session',
-  adminSecret: process.env.ADMIN_SECRET
+  // Administrator access (ADR-0005): one shared passphrase exchanged for a
+  // signed twelve-hour HttpOnly session. The passphrase is NEVER accepted in
+  // a URL or query string — only in the POST /api/admin/session body.
+  adminPassphrase: process.env.ADMIN_PASSPHRASE,
+  adminSessionSecret: process.env.ADMIN_SESSION_SECRET || process.env.TEACHER_SESSION_SECRET || process.env.SESSION_SECRET || 'change-me-in-prod',
+  adminSessionCookie: process.env.ADMIN_SESSION_COOKIE || 'vve_admin_session',
+  adminSessionTtlMs: Number(process.env.ADMIN_SESSION_TTL_MS || 12 * 60 * 60 * 1000),
+  // Login rate limit (per client key, enforced inside CapabilityAccess).
+  adminLoginMax: Number(process.env.ADMIN_LOGIN_MAX || 5),
+  adminLoginWindowMs: Number(process.env.ADMIN_LOGIN_WINDOW_MS || 60_000),
+  boardWsSecret: process.env.BOARD_WS_SECRET || process.env.TEACHER_SESSION_SECRET || process.env.SESSION_SECRET || 'change-me',
+  // PilotAvailability inputs (Module 9): the production-like deployment is the
+  // Pilot surface; local development keeps excluded features behind the
+  // intentional internal VVE_DEV_SURFACE flag. Never settable by request input.
+  // VVE_PILOT_SURFACE=1 forces the Pilot surface without NODE_ENV=production
+  // (used by local pilots/E2E where production fail-fast checks do not apply).
+  pilotEnvironment: (process.env.VVE_PILOT_SURFACE === '1' || process.env.NODE_ENV === 'production'
+    ? 'pilot'
+    : 'development') as 'pilot' | 'development',
+  devSurface:
+    process.env.NODE_ENV !== 'production' &&
+    (process.env.VVE_DEV_SURFACE === '1' || process.env.VVE_DEV_SURFACE === 'true')
 };
+
+// 4.1: Fail-fast if critical secrets are missing in production
+if (config.nodeEnv === 'production') {
+  const missing: string[] = [];
+  if (!process.env.TEACHER_SESSION_SECRET && !process.env.SESSION_SECRET) {
+    missing.push('TEACHER_SESSION_SECRET (or SESSION_SECRET)');
+  }
+  if (config.teacherSessionSecret === 'change-me-in-prod') {
+    missing.push('TEACHER_SESSION_SECRET (still using default fallback)');
+  }
+  if (!config.adminPassphrase) {
+    missing.push('ADMIN_PASSPHRASE (shared Administrator passphrase, ADR-0005)');
+  }
+  if (config.adminSessionSecret === 'change-me-in-prod') {
+    missing.push('ADMIN_SESSION_SECRET (still using default fallback)');
+  }
+  if (!config.databaseUrl) {
+    missing.push('DATABASE_URL');
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `[config] Missing required secrets in production:\n  - ${missing.join('\n  - ')}\nSet these environment variables before starting the server.`
+    );
+  }
+}
+
+// C5: Warn in development mode about default secrets
+if (config.nodeEnv !== 'production' && config.teacherSessionSecret === 'change-me-in-prod') {
+  console.warn(
+    '[config] WARNING: Using default teacherSessionSecret. Set TEACHER_SESSION_SECRET env var for security.'
+  );
+}
 
 export const paths = {
   whiteboard: '/ws/whiteboard'

@@ -42,13 +42,22 @@ export const compactSerialize = (state) => {
     v: 1, // version number for future compatibility
     w: state.canvasWidth,
     h: state.canvasHeight,
+    // 7.5: Include all relevant element fields in compact format
     e: state.elements.map(element => {
-      return {
+      const compact = {
         t: element.type.charAt(0), // p for pen, e for eraser, etc.
         c: element.color,
         w: element.lineWidth,
         p: compressPoints(element.points)
       };
+      // Optional fields — only include if defined
+      if (element.fillColor) compact.fc = element.fillColor;
+      if (element.strokeColor) compact.sc = element.strokeColor;
+      if (element.rotation) compact.r = element.rotation;
+      if (element.opacity != null && element.opacity !== 1) compact.o = element.opacity;
+      if (element.text) compact.tx = element.text;
+      if (element.roughness != null) compact.rg = element.roughness;
+      return compact;
     })
   };
 
@@ -74,12 +83,20 @@ export const compactDeserialize = (text) => {
           default: type = 'pen';
         }
 
-        return {
+        // 7.5: Deserialize all compact fields
+        const el = {
           type,
           color: elem.c,
           lineWidth: elem.w,
           points: decompressPoints(elem.p)
         };
+        if (elem.fc) el.fillColor = elem.fc;
+        if (elem.sc) el.strokeColor = elem.sc;
+        if (elem.r) el.rotation = elem.r;
+        if (elem.o != null) el.opacity = elem.o;
+        if (elem.tx) el.text = elem.tx;
+        if (elem.rg != null) el.roughness = elem.rg;
+        return el;
       })
     };
   } catch (e) {

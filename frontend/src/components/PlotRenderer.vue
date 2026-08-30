@@ -90,6 +90,9 @@ const props = defineProps({
   data: Object
 });
 
+// 7.4: Emit error instead of silent return
+const emit = defineEmits(['render-error']);
+
 const viewBox = computed(() => `0 0 ${props.width} ${props.height}`);
 // Use props color or fallback to a nice blue accent from theme
 const color = computed(() => props.data.color || '#2563eb');
@@ -111,6 +114,9 @@ const functionPath = computed(() => {
   try {
       compiled = math.compile(expr);
   } catch (e) {
+      // 7.4: Emit error instead of silent return
+      emit('render-error', { expression: expr, error: e.message });
+      console.warn('[PlotRenderer] Failed to compile expression:', expr, e.message);
       return '';
   }
 

@@ -23,7 +23,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { getStroke } from 'perfect-freehand';
 import * as Y from 'yjs';
 
@@ -86,6 +86,11 @@ onMounted(() => {
   });
   
   window.addEventListener('resize', resizeCanvas);
+});
+
+// 5.5: Remove resize listener on unmount
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', resizeCanvas);
 });
 
 // Funkcje rysowania

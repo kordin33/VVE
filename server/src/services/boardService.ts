@@ -1,11 +1,8 @@
-import crypto from 'crypto';
 import { randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
-import { Knex } from 'knex';
 import { getDb } from '../db';
-import { BoardRecord, BoardWithStudent } from '../models/board';
-import { hashToken, verifyToken } from './teacherMagicLinks';
+import { BoardRecord } from '../models/board';
 import { config } from '../config';
 
 const DEFAULT_VALID_MONTHS = 6;
@@ -16,14 +13,19 @@ const addMonths = (date: Date, months: number) => {
   return d;
 };
 
-const deriveStudentToken = (boardId: string, slug: string) => {
-  const secret = process.env.STUDENT_TOKEN_SECRET || process.env.TEACHER_SESSION_SECRET || 'change-me';
-  const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(`${boardId}:${slug}`);
-  return hmac.digest('base64url');
-};
+/**
+ * VVE-101: the Board Access Link token is RANDOM and stored (retrievable, like
+ * the Teacher Access Link per ADR-0008). The previous deterministic
+ * HMAC(boardId:slug) derivation is deleted: random stored tokens support the
+ * credential-version regeneration contract (VVE-102 rotates them).
+ */
+const generateStudentToken = () => randomBytes(32).toString('base64url');
 
-const generateSlug = async (db: Knex): Promise<string> => {
+const studentBoardUrl = (slug: string, token: string) =>
+  `${config.teacherAppBaseUrl}/board/${slug}?token=${token}`;
+
+const generateSlug = async (): Promise<string> => {
+  const db = getDb();
   // Try a few times to avoid collisions
   for (let i = 0; i < 5; i += 1) {
     const slug = randomBytes(6).toString('base64url');
@@ -54,10 +56,9 @@ export const createBoardForTeacher = async (params: CreateBoardParams): Promise<
   const now = new Date();
   const validUntil = params.validUntil ?? addMonths(now, DEFAULT_VALID_MONTHS);
 
-  const slug = await generateSlug(db);
+  const slug = await generateSlug();
   const boardId = uuidv4();
-  const studentToken = deriveStudentToken(boardId, slug);
-  const studentTokenHash = await hashToken(studentToken);
+  const studentToken = generateStudentToken();
 
   return db.transaction(async (trx): Promise<CreateBoardResult> => {
     let studentId: string | null = null;
@@ -84,7 +85,7 @@ export const createBoardForTeacher = async (params: CreateBoardParams): Promise<
         student_id: studentId,
         title: params.title ?? null,
         public_slug: slug,
-        student_token_hash: studentTokenHash,
+        student_token: studentToken,
         valid_until: validUntil
       })
       .returning('*');
@@ -101,7 +102,7 @@ export const createBoardForTeacher = async (params: CreateBoardParams): Promise<
       ydoc_state: Buffer.from(encoded)
     });
 
-    const studentUrl = `${config.teacherAppBaseUrl}/board/${slug}?token=${studentToken}`;
+    const studentUrl = studentBoardUrl(slug, studentToken);
 
     return { board, studentToken, studentUrl };
   });
@@ -131,40 +132,21 @@ export const listBoardsForTeacher = async (teacherId: string): Promise<ListBoard
       'boards.created_at',
       'boards.valid_until',
       'boards.public_slug',
+      'boards.student_token',
       'boards.archived_at'
     )
     .orderBy('boards.created_at', 'desc');
 
-  return rows.map((row: any) => {
-    const slug = row.public_slug;
-    const token = deriveStudentToken(row.id, slug);
-    const studentUrl = `${config.teacherAppBaseUrl}/board/${slug}?token=${token}`;
-    return {
-      id: row.id,
-      title: row.title,
-      student_name: row.student_name ?? null,
-      created_at: row.created_at,
-      valid_until: row.valid_until,
-      public_slug: slug,
-      student_url: studentUrl,
-      archived_at: row.archived_at ?? null
-    };
-  });
-};
-
-export const findBoardBySlug = async (slug: string): Promise<BoardWithStudent | null> => {
-  const db = getDb();
-  const row = await db<BoardRecord>('boards')
-    .leftJoin('students', 'boards.student_id', 'students.id')
-    .leftJoin('teachers', 'boards.teacher_id', 'teachers.id')
-    .where('boards.public_slug', slug)
-    .first(
-      'boards.*',
-      db.ref('students.full_name').as('student_name'),
-      db.ref('teachers.full_name').as('teacher_full_name')
-    );
-  if (!row) return null;
-  return row as unknown as BoardWithStudent;
+  return rows.map((row: any) => ({
+    id: row.id,
+    title: row.title,
+    student_name: row.student_name ?? null,
+    created_at: row.created_at,
+    valid_until: row.valid_until,
+    public_slug: row.public_slug,
+    student_url: studentBoardUrl(row.public_slug, row.student_token ?? ''),
+    archived_at: row.archived_at ?? null
+  }));
 };
 
 export interface UpdateBoardParams {
@@ -186,15 +168,4 @@ export const updateBoard = async (boardId: string, teacherId: string, params: Up
     .returning('*');
 
   return updated ?? null;
-};
-
-export const verifyStudentTokenForBoard = async (board: BoardRecord, token: string): Promise<boolean> => {
-  // Token is derived deterministically from board id + slug to keep it shareable without storing plaintext.
-  const expectedRaw = deriveStudentToken(board.id, board.public_slug ?? '');
-  const expectedBuf = Buffer.from(expectedRaw);
-  const providedBuf = Buffer.from(token);
-  if (expectedBuf.length !== providedBuf.length) return false;
-  const sameRaw = crypto.timingSafeEqual(expectedBuf, providedBuf);
-  if (!sameRaw) return false;
-  return verifyToken(token, board.student_token_hash);
 };

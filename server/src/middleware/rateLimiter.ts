@@ -16,6 +16,18 @@ export const createRateLimiter = (options: RateLimiterOptions): RequestHandler =
     options.keyResolver ||
     ((req: import('express').Request) => req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown');
 
+  // Periodically prune expired buckets to prevent memory leak
+  const PRUNE_INTERVAL_MS = Math.max(windowMs * 10, 60_000);
+  const pruneInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets) {
+      if (bucket.resetAt < now) {
+        buckets.delete(key);
+      }
+    }
+  }, PRUNE_INTERVAL_MS);
+  pruneInterval.unref(); // Don't keep process alive just for pruning
+
   return (req, res, next) => {
     const key = keyResolver(req);
     const now = Date.now();

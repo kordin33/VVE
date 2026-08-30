@@ -1,343 +1,655 @@
 <template>
-  <div class="admin-shell">
-    <header class="admin-header full-width-container">
-      <div>
-        <span class="eyebrow">Panel Administratora</span>
-        <h1>Zarządzanie Nauczycielami</h1>
+  <div class="admin-soft-shell">
+    <!-- ============ Administrator login (ADR-0005) ============ -->
+    <div v-if="authState === 'checking'" class="gate-stage">
+      <div class="soft-card gate-card">
+        <p class="eyebrow">WhiteVue Pilot</p>
+        <div class="spinner-well"><div class="spinner"></div></div>
+        <p class="muted">Sprawdzanie sesji…</p>
       </div>
-      <div class="header-badge">
-        <div class="status-dot active"></div>
-        <span>/api/admin/teachers</span>
-      </div>
-    </header>
+    </div>
 
-    <div class="grid-layout full-width-container">
-      <!-- Sidebar / Actions -->
-      <aside class="sidebar-col">
-        <section class="minimal-card action-card">
-          <header class="card-head">
-            <h3>Dodaj nauczyciela</h3>
-          </header>
-          
-          <div class="form-stack">
-            <div class="field-group">
-              <label>Adres email</label>
-              <input v-model="manual.email" type="email" placeholder="nauczyciel@szkola.pl" />
-            </div>
-            <div class="field-group">
-              <label>Imię i nazwisko</label>
-              <input v-model="manual.fullName" type="text" placeholder="Jan Kowalski" />
-            </div>
-            <button class="btn-primary full-width" :disabled="submitting" @click="submitManual">
-              {{ submitting ? 'Przetwarzanie...' : 'Dodaj nauczyciela' }}
+    <div v-else-if="authState === 'anonymous'" class="gate-stage">
+      <form class="soft-card gate-card" @submit.prevent="login">
+        <p class="eyebrow">WhiteVue Pilot</p>
+        <h1 class="gate-title">Panel administratora</h1>
+        <p class="muted gate-sub">Wprowadź wspólne hasło, aby zarządzać dostępami.</p>
+
+        <label class="field-label" for="admin-passphrase">Hasło administratora</label>
+        <input
+          id="admin-passphrase"
+          ref="passphraseInput"
+          v-model="passphrase"
+          type="password"
+          class="soft-input"
+          autocomplete="current-password"
+          placeholder="••••••••••••"
+          :disabled="loginPending"
+        />
+
+        <div v-if="loginError" class="soft-alert" role="alert">{{ loginError }}</div>
+
+        <button type="submit" class="soft-btn accent full" :disabled="loginPending || !passphrase">
+          {{ loginPending ? 'Sprawdzanie…' : 'Odblokuj panel' }}
+        </button>
+        <p class="fineprint">Sesja wygasa po 12 godzinach. Hasło nie jest zapisywane w przeglądarce.</p>
+      </form>
+    </div>
+
+    <!-- ============ Panel ============ -->
+    <template v-else>
+      <header class="panel-head">
+        <div>
+          <p class="eyebrow">WhiteVue Pilot</p>
+          <h1 class="panel-title">Nauczyciele i linki dostępu</h1>
+          <p class="muted">Wyświetlanie listy nie zmienia żadnego linku. Regeneracja jest zawsze świadomą decyzją.</p>
+        </div>
+        <button class="soft-btn quiet" @click="logout" title="Zakończ sesję administratora">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Wyloguj
+        </button>
+      </header>
+
+      <div class="panel-grid">
+        <!-- Add teacher -->
+        <aside class="rail">
+          <section class="soft-card">
+            <h2 class="card-title">Dodaj nauczyciela</h2>
+            <p class="muted small">Etykieta wewnętrzna służy tylko obsłudze biura — uczniowie jej nie widzą.</p>
+
+            <label class="field-label" for="new-email">Adres email</label>
+            <input id="new-email" v-model="manual.email" type="email" class="soft-input" placeholder="nauczyciel@szkola.pl" :disabled="addPending" />
+
+            <label class="field-label" for="new-label">Etykieta wewnętrzna (opcjonalnie)</label>
+            <input id="new-label" v-model="manual.internalLabel" type="text" class="soft-input" placeholder="np. Kowalski — fizyka" :disabled="addPending" />
+
+            <button class="soft-btn accent full" :disabled="addPending || !manual.email" @click="addTeacher">
+              {{ addPending ? 'Dodawanie…' : 'Dodaj i wygeneruj link' }}
             </button>
-          </div>
 
-          <div v-if="lastGeneratedLink" class="result-box">
-            <div class="result-meta">
-              <span class="label">Stały link (nigdy nie wygasa)</span>
-              <button class="btn-ghost" @click="copy(lastGeneratedLink)">Kopiuj</button>
+            <div v-if="addError" class="soft-alert" role="alert">{{ addError }}</div>
+
+            <!-- Signature: the keyway — a recessed channel that holds the credential. -->
+            <div v-if="freshLink" class="keyway fresh">
+              <div class="keyway-top">
+                <span class="keyway-label">Nowy link dostępu nauczyciela</span>
+                <button class="soft-btn mini" :class="{ copied: copiedKeyway }" @click="copy(freshLink, 'keyway')">
+                  {{ copiedKeyway ? 'Skopiowano' : 'Kopiuj' }}
+                </button>
+              </div>
+              <div class="keyway-channel">{{ freshLink }}</div>
             </div>
-            <div class="code-block">{{ lastGeneratedLink }}</div>
-          </div>
-        </section>
+          </section>
 
-        <section class="minimal-card action-card mt-6">
-          <header class="card-head">
-            <h3>Import masowy</h3>
-            <span class="subtext-xs">CSV</span>
-          </header>
-          
-          <div class="file-drop-area">
-            <input type="file" accept=".csv,text/csv" @change="handleFile" id="csvInput" />
-            <label for="csvInput" class="file-label" :class="{ 'has-file': file }">
-              <span v-if="file" class="file-name">{{ file.name }}</span>
-              <span v-else>Przeciągnij plik CSV tutaj</span>
-            </label>
-          </div>
-          <p class="fmt-hint">Format: <code>email, full_name</code></p>
-          
-          <button class="btn-secondary full-width mt-2" :disabled="submitting || !file" @click="submitCsv">
-            Importuj
-          </button>
-        </section>
-      </aside>
+          <section class="soft-card hint-card">
+            <h2 class="card-title">Jak działają linki</h2>
+            <ul class="hint-list">
+              <li>Jeden aktywny link na nauczyciela — kopiujesz go z listy, nic nie musisz generować.</li>
+              <li>Regeneracja unieważnia wyłącznie stary link. Tablice zostają bez zmian.</li>
+              <li>Wyłączenie nauczyciela odbiera dostęp natychmiast — wszystkim linkom i sesjom.</li>
+            </ul>
+          </section>
+        </aside>
 
-      <!-- Main List -->
-      <main class="list-col">
-        <section class="minimal-card list-card">
-          <header class="list-header">
-            <h3>Baza danych</h3>
-            <div class="list-controls">
-              <span class="count">{{ teachers.length }} nauczycieli</span>
-              <button class="btn-secondary icon-only" @click="loadTeachers" :disabled="loading" title="Odśwież">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+        <!-- Teacher list -->
+        <main class="soft-card list-card">
+          <div class="list-head">
+            <h2 class="card-title">Baza nauczycieli</h2>
+            <div class="list-tools">
+              <span class="muted mono">{{ teachers.length }} {{ teachers.length === 1 ? 'nauczyciel' : 'nauczycieli' }}</span>
+              <button class="soft-btn quiet icon" :disabled="loading" title="Odśwież listę" @click="loadTeachers">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
               </button>
             </div>
-          </header>
-
-          <div v-if="loading" class="state-empty">Ładowanie...</div>
-          <div v-else-if="!teachers.length" class="state-empty">Brak danych</div>
-          
-          <div v-else class="list-scroll">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Nauczyciel</th>
-                  <th>Email</th>
-                  <th style="width: 100px; text-align: center;">Status</th>
-                  <th style="width: 160px; text-align: right;">Stały link</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in teachers" :key="item.teacherId">
-                  <td>
-                    <div class="user-cell">
-                      <div class="avatar-sm">{{ (item.fullName || 'T')[0] }}</div>
-                      <span>{{ item.fullName || '---' }}</span>
-                    </div>
-                  </td>
-                  <td class="email-cell">{{ item.email }}</td>
-                  <td style="text-align: center;">
-                    <span class="status-dot" :class="{ active: item.hasPermanentLink || permanentLinks[item.teacherId] }"></span>
-                  </td>
-                  <td>
-                    <div class="actions-right">
-                      <!-- Show loading state while fetching link -->
-                      <span v-if="loadingLinks[item.teacherId]" class="loading-text">...</span>
-                      <!-- Show copy button if link is available -->
-                      <template v-else-if="permanentLinks[item.teacherId]">
-                        <button class="btn-ghost small copy-btn" @click="copy(permanentLinks[item.teacherId])" title="Kopiuj link">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                          Kopiuj
-                        </button>
-                      </template>
-                      <!-- Fallback: generate link -->
-                      <button v-else class="btn-ghost small" :disabled="generating === item.teacherId" @click="generateLink(item.teacherId)">
-                        {{ generating === item.teacherId ? '...' : 'Pobierz link' }}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
           </div>
-        </section>
-      </main>
-    </div>
+
+          <!-- Load failure is an ERROR state, never an empty list (QA P1-1). -->
+          <div v-if="loadError" class="list-state">
+            <p class="soft-alert wide" role="alert">{{ loadError }}</p>
+            <button class="soft-btn quiet" @click="loadTeachers">Spróbuj ponownie</button>
+          </div>
+
+          <div v-else-if="loading" class="list-state">
+            <div class="spinner-well"><div class="spinner"></div></div>
+            <p class="muted">Ładowanie listy…</p>
+          </div>
+
+          <div v-else-if="!teachers.length" class="list-state">
+            <p class="muted">Nie dodano jeszcze żadnego nauczyciela.</p>
+            <p class="muted small">Zacznij od formularza po lewej — link dostępu utworzy się sam.</p>
+          </div>
+
+          <ul v-else class="teacher-rows">
+            <li v-for="t in teachers" :key="t.teacherId" class="teacher-row" :class="{ off: !t.isActive }">
+              <div class="row-main">
+                <div class="row-id">
+                  <span class="status-pip" :class="t.isActive ? 'on' : 'off'"></span>
+                  <div>
+                    <p class="row-name">{{ t.internalLabel || t.email }}</p>
+                    <p class="row-email mono">{{ t.email }}</p>
+                  </div>
+                </div>
+                <div class="row-meta mono">
+                  <span :title="formatDate(t.lastLoginAt)">ostatnie logowanie: {{ t.lastLoginAt ? formatDate(t.lastLoginAt) : '—' }}</span>
+                </div>
+              </div>
+
+              <!-- The keyway: current retrievable link, copy-only. -->
+              <div class="keyway">
+                <div class="keyway-top">
+                  <span class="keyway-label">{{ t.isActive ? 'Aktualny link dostępu' : 'Dostęp wyłączony' }}</span>
+                  <button
+                    v-if="t.accessLink"
+                    class="soft-btn mini"
+                    :class="{ copied: copiedRow === t.teacherId }"
+                    @click="copy(t.accessLink, t.teacherId)"
+                  >
+                    {{ copiedRow === t.teacherId ? 'Skopiowano' : 'Kopiuj' }}
+                  </button>
+                </div>
+                <div class="keyway-channel">{{ t.accessLink || 'Brak aktywnego linku.' }}</div>
+              </div>
+
+              <div class="row-actions" v-if="t.isActive">
+                <button class="soft-btn quiet warn" @click="beginAction(t, 'regenerate')">Regeneruj link</button>
+                <button class="soft-btn quiet danger" @click="beginAction(t, 'deactivate')">Wyłącz nauczyciela</button>
+              </div>
+
+              <!-- Inline destructive confirmation — never a surprise mutation. -->
+              <div v-if="pending && pending.teacherId === t.teacherId" class="confirm-well" role="alertdialog" aria-live="assertive">
+                <p class="confirm-text">
+                  {{
+                    pending.kind === 'regenerate'
+                      ? 'Regenerować link? Dotychczasowy link natychmiast przestanie działać. Tablice pozostaną bez zmian.'
+                      : 'Wyłączyć tego nauczyciela? Cały dostęp zostanie natychmiast odebrany.'
+                  }}
+                </p>
+                <div class="confirm-row">
+                  <button class="soft-btn accent" :disabled="actionPending" @click="confirmAction">
+                    {{ actionPending ? 'Wykonywanie…' : 'Potwierdzam' }}
+                  </button>
+                  <button class="soft-btn quiet" :disabled="actionPending" @click="cancelAction">Anuluj</button>
+                </div>
+                <p v-if="actionError" class="soft-alert wide">{{ actionError }}</p>
+              </div>
+            </li>
+          </ul>
+        </main>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref, reactive } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { resolveBackendBaseUrl } from '../services/backendUrl';
 
-const manual = ref({ email: '', fullName: '' });
-const file = ref(null);
-const teachers = ref([]);
-const loading = ref(false);
-const submitting = ref(false);
-const generating = ref(null);
-const lastGeneratedLink = ref('');
-const permanentLinks = reactive({});
-const loadingLinks = reactive({});
+/**
+ * Administrator surface (VVE-101, ADR-0005 + ADR-0008).
+ *
+ * - Login exchanges the shared passphrase (JSON body ONLY) for the signed
+ *   twelve-hour HttpOnly session cookie; no secret ever travels in a URL,
+ *   header, or build-time env.
+ * - The teacher list is a pure GET: viewing NEVER creates or rotates links.
+ *   Copying the displayed link is enough — there is no per-teacher POST.
+ * - Regeneration and deactivation are explicit, confirmed actions.
+ * - Every fetch handles res.ok and surfaces a Polish error state; failures
+ *   are never masked as an empty list (QA P1-1).
+ */
 const apiBase = resolveBackendBaseUrl();
 
-// Admin secret for authorizing admin API calls
-const adminSecret = import.meta.env.VITE_ADMIN_SECRET || '';
+const authState = ref('checking'); // 'checking' | 'anonymous' | 'authenticated'
+const passphrase = ref('');
+const loginPending = ref(false);
+const loginError = ref('');
+const passphraseInput = ref(null);
 
-// Debug log - helps identify if VITE_ADMIN_SECRET is set during build
-console.log('[AdminTeachersPanel] Admin secret status:', {
-  isSet: !!adminSecret,
-  length: adminSecret.length,
-  prefix: adminSecret ? adminSecret.substring(0, 4) + '...' : 'NOT_SET',
-  apiBase
-});
+const teachers = ref([]);
+const loading = ref(false);
+const loadError = ref('');
 
-// Helper to get headers with admin authorization
-const adminHeaders = (extra = {}) => ({
-  'x-admin-secret': adminSecret,
-  ...extra
-});
+const manual = reactive({ email: '', internalLabel: '' });
+const addPending = ref(false);
+const addError = ref('');
+const freshLink = ref('');
 
-const copy = (t) => {
-  navigator.clipboard.writeText(t);
+const pending = ref(null); // { teacherId, kind: 'regenerate' | 'deactivate' }
+const actionPending = ref(false);
+const actionError = ref('');
+
+const copiedRow = ref(null);
+const copiedKeyway = ref(false);
+let copiedTimer = null;
+
+const jsonHeaders = { 'Content-Type': 'application/json' };
+
+/** Session-expiry-aware fetch: a 401 returns to the login gate. */
+const apiFetch = async (path, options = {}) => {
+  const res = await fetch(`${apiBase}${path}`, { credentials: 'include', ...options });
+  if (res.status === 401 && authState.value === 'authenticated') {
+    authState.value = 'anonymous';
+    loginError.value = 'Sesja wygasła. Zaloguj się ponownie.';
+  }
+  return res;
 };
 
-// Fetch permanent link for a teacher
-const fetchPermanentLink = async (teacherId) => {
-  if (permanentLinks[teacherId] || loadingLinks[teacherId]) return;
-  
-  loadingLinks[teacherId] = true;
+const readError = async (res, fallback) => {
   try {
-    const res = await fetch(`${apiBase}/api/admin/teachers/${teacherId}/permanent-link`, { method: 'POST', headers: adminHeaders() });
-    const data = await res.json();
-    if (data.permanentLink) {
-      permanentLinks[teacherId] = data.permanentLink;
-    } else if (data.error) {
-      console.error('[AdminTeachersPanel] Permanent link error:', data.error);
-    }
-  } catch (e) {
-    console.error('Failed to fetch permanent link:', e);
-  } finally {
-    loadingLinks[teacherId] = false;
+    const body = await res.json();
+    return typeof body.error === 'string' && body.error ? body.error : fallback;
+  } catch {
+    return fallback;
   }
+};
+
+onMounted(async () => {
+  try {
+    const res = await fetch(`${apiBase}/api/admin/session`, { credentials: 'include' });
+    if (res.ok) {
+      authState.value = 'authenticated';
+      await loadTeachers();
+      return;
+    }
+  } catch {
+    /* network failure = anonymous gate with its own error surface */
+  }
+  authState.value = 'anonymous';
+});
+
+const login = async () => {
+  loginPending.value = true;
+  loginError.value = '';
+  try {
+    const res = await fetch(`${apiBase}/api/admin/session`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: jsonHeaders,
+      body: JSON.stringify({ passphrase: passphrase.value })
+    });
+    if (res.ok) {
+      passphrase.value = '';
+      authState.value = 'authenticated';
+      await loadTeachers();
+      return;
+    }
+    loginError.value = await readError(res, 'Nie udało się zalogować. Spróbuj ponownie.');
+  } catch {
+    loginError.value = 'Brak połączenia z serwerem. Sprawdź połączenie i spróbuj ponownie.';
+  } finally {
+    loginPending.value = false;
+  }
+};
+
+const logout = async () => {
+  try {
+    await apiFetch('/api/admin/session', { method: 'DELETE' });
+  } catch {
+    /* clearing the local view regardless */
+  }
+  teachers.value = [];
+  freshLink.value = '';
+  pending.value = null;
+  authState.value = 'anonymous';
 };
 
 const loadTeachers = async () => {
   loading.value = true;
+  loadError.value = '';
   try {
-    const res = await fetch(`${apiBase}/api/admin/teachers`, { headers: adminHeaders() });
-    const data = await res.json();
-    
+    const res = await apiFetch('/api/admin/teachers');
     if (!res.ok) {
-      console.error('[AdminTeachersPanel] API error:', { status: res.status, data });
-      alert(`Błąd API (${res.status}): ${data.error || 'Nieznany błąd'}. Sprawdź czy VITE_ADMIN_SECRET i ADMIN_SECRET są poprawnie ustawione na Railway.`);
+      loadError.value = await readError(res, 'Nie udało się pobrać listy nauczycieli.');
+      if (res.status !== 401) teachers.value = [];
       return;
     }
-    
-    teachers.value = data.teachers || [];
-    
-    // Automatically fetch permanent links for all teachers
-    for (const teacher of teachers.value) {
-      fetchPermanentLink(teacher.teacherId);
-    }
-  } catch (e) { console.error(e); }
-  finally { loading.value = false; }
+    const data = await res.json();
+    teachers.value = Array.isArray(data.teachers) ? data.teachers : [];
+  } catch {
+    loadError.value = 'Brak połączenia z serwerem. Nie udało się pobrać listy nauczycieli.';
+  } finally {
+    loading.value = false;
+  }
 };
-onMounted(loadTeachers);
 
-const submitManual = async () => {
-  submitting.value = true;
+const addTeacher = async () => {
+  addPending.value = true;
+  addError.value = '';
   try {
-    const res = await fetch(`${apiBase}/api/admin/teachers/import`, {
-      method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(manual.value)
+    const res = await apiFetch('/api/admin/teachers', {
+      method: 'POST',
+      credentials: 'include',
+      headers: jsonHeaders,
+      body: JSON.stringify({ email: manual.email.trim(), internalLabel: manual.internalLabel.trim() || null })
     });
-    const data = await res.json();
-    // Use permanentLink from new API
-    if(data.results?.[0]?.permanentLink) {
-      lastGeneratedLink.value = data.results[0].permanentLink;
-      // Also store in our cache
-      if (data.results[0].teacherId) {
-        permanentLinks[data.results[0].teacherId] = data.results[0].permanentLink;
-      }
+    if (!res.ok) {
+      addError.value = await readError(res, 'Nie udało się dodać nauczyciela.');
+      return;
     }
-    manual.value = { email: '', fullName: '' };
-    loadTeachers();
-  } catch(e){ alert('Błąd'); }
-  finally { submitting.value = false; }
-};
-
-// Keep this for fallback but use permanent-link endpoint
-const generateLink = async (tid) => {
-  generating.value = tid;
-  try {
-    const res = await fetch(`${apiBase}/api/admin/teachers/${tid}/permanent-link`, { method: 'POST', headers: adminHeaders() });
     const data = await res.json();
-    if(data.permanentLink) permanentLinks[tid] = data.permanentLink;
-    loadTeachers();
-  } catch(e){}
-  finally { generating.value = null; }
+    freshLink.value = data.accessLink || '';
+    manual.email = '';
+    manual.internalLabel = '';
+    await loadTeachers();
+  } catch {
+    addError.value = 'Brak połączenia z serwerem. Nie udało się dodać nauczyciela.';
+  } finally {
+    addPending.value = false;
+  }
 };
 
-const handleFile = (e) => file.value = e.target.files?.[0] || null;
+const beginAction = (teacher, kind) => {
+  actionError.value = '';
+  pending.value = { teacherId: teacher.teacherId, kind };
+};
 
-const submitCsv = async () => {
-  if(!file.value) return;
-  submitting.value = true;
+const cancelAction = () => {
+  pending.value = null;
+  actionError.value = '';
+};
+
+const confirmAction = async () => {
+  if (!pending.value) return;
+  const { teacherId, kind } = pending.value;
+  actionPending.value = true;
+  actionError.value = '';
   try {
-    const fd = new FormData(); fd.append('file', file.value);
-    await fetch(`${apiBase}/api/admin/teachers/import`, { method: 'POST', headers: adminHeaders(), body: fd });
-    loadTeachers(); file.value = null;
-  } catch(e){ alert('Błąd importu'); }
-  finally { submitting.value = false; }
+    const res = await apiFetch(`/api/admin/teachers/${teacherId}/${kind === 'regenerate' ? 'regenerate-link' : 'deactivate'}`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      actionError.value = await readError(
+        res,
+        kind === 'regenerate' ? 'Nie udało się wygenerować nowego linku.' : 'Nie udało się wyłączyć nauczyciela.'
+      );
+      return;
+    }
+    const data = await res.json();
+    pending.value = null;
+    await loadTeachers();
+    if (kind === 'regenerate' && data.accessLink) {
+      freshLink.value = data.accessLink;
+    }
+  } catch {
+    actionError.value = 'Brak połączenia z serwerem. Spróbuj ponownie.';
+  } finally {
+    actionPending.value = false;
+  }
+};
+
+const copy = async (text, rowKey) => {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* clipboard may be blocked; the full link stays selectable in the channel */
+  }
+  if (rowKey === 'keyway') {
+    copiedKeyway.value = true;
+    setTimeout(() => (copiedKeyway.value = false), 2000);
+  } else {
+    copiedRow.value = rowKey;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedRow.value = null), 2000);
+  }
+};
+
+const formatDate = (value) => {
+  try {
+    return value ? new Date(value).toLocaleDateString('pl-PL') : '—';
+  } catch {
+    return '—';
+  }
 };
 </script>
 
 <style scoped>
-.admin-shell { padding-top: 40px; padding-bottom: 80px; background-color: var(--bg-base); min-height: 100vh; }
+/* ---------------------------------------------------------------------------
+   Structured Soft UI (house neumorphic language, leaning A: an information-
+   dense administrative console). One material, one virtual light from the
+   top-left. Depth carries hierarchy: raised cards hold actions, recessed
+   channels hold credentials (the keyway signature), quiet buttons sit flush.
+--------------------------------------------------------------------------- */
+.admin-soft-shell {
+  --soft-bg: #e4e9f2;
+  --soft-surface: #e4e9f2;
+  --soft-light: rgba(255, 255, 255, 0.92);
+  --soft-dark: rgba(159, 173, 198, 0.58);
+  --soft-ink: #1c2739;
+  --soft-ink-2: #5a6b84;
+  --soft-ink-3: #93a3ba;
+  --soft-accent: #2f6fed;
+  --soft-accent-ink: #f4f8ff;
+  --soft-danger: #c23b4e;
+  --soft-warn: #a8691c;
+  --soft-ok: #1f8a5b;
+  --raise: 7px 7px 15px var(--soft-dark), -7px -7px 15px var(--soft-light);
+  --raise-sm: 4px 4px 9px var(--soft-dark), -4px -4px 9px var(--soft-light);
+  --press: inset 4px 4px 8px rgba(159, 173, 198, 0.5), inset -4px -4px 8px rgba(255, 255, 255, 0.85);
+  --press-deep: inset 5px 5px 10px rgba(150, 165, 192, 0.55), inset -3px -3px 7px rgba(255, 255, 255, 0.7);
 
-.admin-header {
-  display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 32px;
+  min-height: 100vh;
+  background: var(--soft-bg);
+  color: var(--soft-ink);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  padding: 48px 32px 96px;
 }
-.header-badge {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle);
-  border-radius: 99px; font-family: monospace; font-size: 11px; color: var(--text-secondary);
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--soft-ink-3);
+  margin: 0 0 6px;
 }
-.status-dot { width: 6px; height: 6px; background: var(--border-strong); border-radius: 50%; }
-.status-dot.active { background: var(--success); box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+.muted { color: var(--soft-ink-2); font-size: 14px; margin: 0; }
+.muted.small { font-size: 12.5px; }
+.mono { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 12px; }
+.fineprint { color: var(--soft-ink-3); font-size: 11.5px; text-align: center; margin: 14px 0 0; }
 
-.grid-layout {
-  display: grid; grid-template-columns: 350px 1fr; gap: 32px; /* Fixed sidebar width */
+/* ---- Cards ------------------------------------------------------------- */
+.soft-card {
+  background: var(--soft-surface);
+  border-radius: 20px;
+  box-shadow: var(--raise);
+  padding: 26px 28px;
+}
+.card-title { font-size: 15.5px; font-weight: 700; margin: 0 0 6px; }
+
+/* ---- Login gate --------------------------------------------------------- */
+.gate-stage { min-height: 76vh; display: flex; align-items: center; justify-content: center; }
+.gate-card { width: 100%; max-width: 380px; padding: 38px 36px; }
+.gate-title { font-size: 24px; font-weight: 800; margin: 0 0 8px; }
+.gate-sub { margin-bottom: 26px; }
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--soft-ink-2);
+  margin: 18px 0 8px;
 }
 
-/* Cards */
-.card-head { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: baseline; }
-.card-head h3 { font-size: 16px; font-weight: 600; margin: 0; color: var(--text-primary); }
-.subtext-xs { font-size: 10px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; }
-
-/* Form */
-.form-stack { display: flex; flex-direction: column; gap: 16px; }
-.field-group label { display: block; font-size: 11px; margin-bottom: 4px; color: var(--text-secondary); font-weight: 600; }
-.field-group input { width: 100%; }
-.full-width { width: 100%; }
-
-.result-box {
-  margin-top: 16px; background: #d1fae5; padding: 12px; border-radius: 6px; border: 1px solid #a7f3d0;
+/* ---- Inputs: recessed --------------------------------------------------- */
+.soft-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  border-radius: 12px;
+  background: var(--soft-surface);
+  box-shadow: var(--press);
+  padding: 13px 16px;
+  font-size: 14.5px;
+  color: var(--soft-ink);
+  transition: box-shadow 0.18s ease;
 }
-.result-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.result-meta .label { font-size: 10px; font-weight: 700; color: #059669; text-transform: uppercase; }
-.code-block { font-family: monospace; font-size: 11px; word-break: break-all; color: var(--text-primary); }
+.soft-input:focus { box-shadow: var(--press), 0 0 0 2px rgba(47, 111, 237, 0.35); }
+.soft-input::placeholder { color: var(--soft-ink-3); }
 
-.mt-6 { margin-top: 24px; }
-.mt-2 { margin-top: 12px; }
+/* ---- Buttons: raised tactile pills -------------------------------------- */
+.soft-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 11px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--soft-ink-2);
+  background: var(--soft-surface);
+  box-shadow: var(--raise-sm);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+}
+.soft-btn:hover:not(:disabled) { color: var(--soft-ink); }
+.soft-btn:active:not(:disabled) { box-shadow: var(--press); transform: translateY(1px); }
+.soft-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.soft-btn:focus-visible { outline: 2px solid rgba(47, 111, 237, 0.6); outline-offset: 2px; }
+.soft-btn.accent {
+  background: linear-gradient(145deg, #3d78f2, #2a63d8);
+  color: var(--soft-accent-ink);
+  box-shadow: 6px 6px 13px rgba(140, 160, 195, 0.55), -6px -6px 13px var(--soft-light);
+}
+.soft-btn.accent:active:not(:disabled) { box-shadow: inset 4px 4px 9px rgba(20, 45, 100, 0.45); }
+.soft-btn.quiet { padding: 9px 14px; font-size: 12.5px; }
+.soft-btn.warn { color: var(--soft-warn); }
+.soft-btn.danger { color: var(--soft-danger); }
+.soft-btn.icon { padding: 9px; }
+.soft-btn.mini { padding: 6px 12px; font-size: 11.5px; }
+.soft-btn.mini.copied { color: var(--soft-ok); }
+.soft-btn.full { width: 100%; margin-top: 22px; }
 
-/* File Area */
-.file-drop-area { position: relative; margin-bottom: 8px; }
-.file-drop-area input { position: absolute; inset: 0; opacity: 0; z-index: 2; cursor: pointer; }
-.file-label {
-  display: flex; align-items: center; justify-content: center; height: 60px;
-  border: 1px dashed var(--border-strong); border-radius: 6px;
-  font-size: 12px; color: var(--text-secondary); background: var(--bg-base);
-  transition: all 0.2s;
+/* ---- Alerts -------------------------------------------------------------- */
+.soft-alert {
+  margin-top: 16px;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--soft-danger);
+  box-shadow: var(--press-deep);
 }
-.file-drop-area input:hover + .file-label { border-color: var(--accent-primary); color: var(--text-primary); }
-.file-label.has-file { border-style: solid; border-color: var(--success); color: var(--success); }
-.fmt-hint { font-size: 11px; color: var(--text-tertiary); }
-.fmt-hint code { background: var(--bg-surface-hover); padding: 2px 4px; border-radius: 4px; border: 1px solid var(--border-subtle); color: var(--text-primary); }
+.soft-alert.wide { margin-top: 0; }
 
-/* List */
-.list-card { height: 100%; display: flex; flex-direction: column; padding: 0; overflow: hidden; background: var(--bg-surface); }
-.list-header {
-  padding: 16px 24px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface-hover);
-  display: flex; justify-content: space-between; align-items: center;
+/* ---- Panel layout -------------------------------------------------------- */
+.panel-head {
+  max-width: 1180px;
+  margin: 0 auto 34px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
 }
-.list-controls { display: flex; gap: 12px; align-items: center; }
-.count { font-size: 11px; color: var(--text-tertiary); font-family: monospace; }
-.state-empty { padding: 60px; text-align: center; color: var(--text-tertiary); }
-.list-scroll { overflow-y: auto; max-height: 800px; }
+.panel-title { font-size: 27px; font-weight: 800; margin: 0 0 8px; }
+.panel-grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 30px;
+  align-items: start;
+}
+.rail { display: flex; flex-direction: column; gap: 30px; }
+.hint-list { margin: 12px 0 0; padding-left: 18px; color: var(--soft-ink-2); font-size: 13px; line-height: 1.7; }
 
-.user-cell { display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: 13px; color: var(--text-primary); }
-.avatar-sm {
-  width: 24px; height: 24px; border-radius: 50%; background: var(--bg-surface-hover); border: 1px solid var(--border-subtle);
-  display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text-secondary);
+/* ---- Keyway (signature) -------------------------------------------------- */
+.keyway {
+  margin-top: 18px;
+  border-radius: 14px;
+  padding: 12px 14px 14px;
+  box-shadow: var(--press-deep);
 }
-.email-cell { font-family: monospace; font-size: 12px; color: var(--text-secondary); }
-.actions-right { display: flex; justify-content: flex-end; gap: 6px; align-items: center; }
-.btn-ghost.small { font-size: 11px; padding: 4px 8px; height: 24px; }
-.loading-text { font-size: 11px; color: var(--text-tertiary); }
+.keyway.fresh { box-shadow: var(--press-deep), 0 0 0 2px rgba(31, 138, 91, 0.35); }
+.keyway-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.keyway-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--soft-ink-3);
+}
+.keyway-channel {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--soft-ink-2);
+  word-break: break-all;
+  user-select: all;
+}
 
-.copy-btn {
-  display: flex; align-items: center; gap: 4px;
-  background: #d1fae5; color: #059669; border-color: #a7f3d0;
+/* ---- Teacher list -------------------------------------------------------- */
+.list-card { padding: 24px 26px 28px; }
+.list-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.list-tools { display: flex; align-items: center; gap: 14px; }
+.list-state { padding: 56px 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+
+.teacher-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 22px; }
+.teacher-row {
+  border-radius: 18px;
+  padding: 18px 20px;
+  box-shadow: var(--raise-sm);
+  transition: opacity 0.2s ease;
 }
-.copy-btn:hover {
-  background: #a7f3d0;
+.teacher-row.off { opacity: 0.62; }
+.row-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.row-id { display: flex; align-items: center; gap: 13px; }
+.row-name { font-size: 14.5px; font-weight: 700; margin: 0; }
+.row-email { color: var(--soft-ink-3); margin: 3px 0 0; font-size: 11.5px; }
+.row-meta { color: var(--soft-ink-3); }
+
+.status-pip {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: var(--press);
 }
+.status-pip.on { background: var(--soft-ok); box-shadow: inset 2px 2px 3px rgba(10, 60, 38, 0.45), inset -2px -2px 3px rgba(160, 235, 200, 0.8); }
+.status-pip.off { background: var(--soft-ink-3); }
+
+.row-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+
+/* ---- Inline confirmation -------------------------------------------------- */
+.confirm-well {
+  margin-top: 16px;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--press-deep);
+}
+.confirm-text { font-size: 13px; color: var(--soft-ink-2); margin: 0 0 12px; line-height: 1.55; }
+.confirm-row { display: flex; gap: 10px; }
+
+/* ---- Spinner --------------------------------------------------------------- */
+.spinner-well {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  box-shadow: var(--press);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(47, 111, 237, 0.2);
+  border-top-color: var(--soft-accent);
+  animation: soft-spin 0.9s linear infinite;
+}
+@keyframes soft-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1024px) {
-  .grid-layout { grid-template-columns: 1fr; }
+  .panel-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.6s; }
+  .soft-btn, .soft-input { transition: none; }
 }
 </style>
